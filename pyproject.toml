@@ -1,0 +1,23 @@
+[project]
+name = "shukatsu-tracker"
+version = "0.3.0"
+description = "就活の選考状況をローカルで一元管理・分析するツール"
+requires-python = ">=3.10"
+dependencies = [
+    "streamlit>=1.36",
+    "pandas>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+# E/F: pycodestyle/pyflakes, I: import順, B: バグの温床, UP: 新しい構文への追従, SIM: 単純化
+select = ["E", "F", "I", "B", "UP", "SIM"]
