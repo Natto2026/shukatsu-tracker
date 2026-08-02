@@ -1,0 +1,8 @@
+# 個人の就活データは絶対にコミットしない
+data/
+*.db
+
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/

@@ -1,0 +1,7 @@
+# 自分のPCからのみアクセス可能にする(同一LAN内の他端末には公開しない)
+[server]
+address = "127.0.0.1"
+
+# Streamlit の利用統計送信を無効化
+[browser]
+gatherUsageStats = false
