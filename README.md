@@ -77,13 +77,14 @@ python -m pytest
 
 ```
 shukatsu-tracker/
-├── app.py                  # Streamlit UI
-├── shukatsu_tracker/
-│   ├── constants.py        # 応募経路・選考ステップ等の定義
-│   ├── db.py               # SQLite 読み書き
-│   ├── analytics.py        # 締切抽出・通過率・ファネル集計(純粋関数)
-│   ├── research.py         # 企業研究リンク生成
-│   └── ai_export.py        # AI 分析用 Markdown 書き出し
+├── app.py                  # Streamlit UI(起動入口)
+├── src/
+│   └── shukatsu_tracker/
+│       ├── constants.py    # 応募経路・選考ステップ等の定義
+│       ├── db.py           # SQLite 読み書き
+│       ├── analytics.py    # 締切抽出・通過率・ファネル集計(純粋関数)
+│       ├── research.py     # 企業研究リンク生成
+│       └── ai_export.py    # AI 分析用 Markdown 書き出し
 └── tests/                  # pytest(ロジック + AppTest スモーク)
 ```
 
