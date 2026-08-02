@@ -3,6 +3,11 @@
 このプロジェクトの変更履歴。[Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) 形式、
 バージョニングは [Semantic Versioning](https://semver.org/lang/ja/) に従う。
 
+## [Unreleased]
+
+### Changed
+- src レイアウトへ移行(パッケージを `src/shukatsu_tracker/` 配下に配置)
+
 ## [0.3.0] - 2026-08-02
 
 ### Added
