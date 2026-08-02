@@ -5,16 +5,20 @@
 ```
 shukatsu-tracker/
 ├── app.py                    # Streamlit UI(画面の組み立てのみ。ロジックは持たない)
-├── shukatsu_tracker/
-│   ├── constants.py          # 選択肢の定義(応募経路・選考ステップ等)
-│   ├── db.py                 # SQLite 読み書き(唯一 DB に触る層)
-│   ├── analytics.py          # 集計ロジック(DB 非依存の純粋関数)
-│   ├── research.py           # 企業研究リンク生成(通信しない。URL 組み立てのみ)
-│   └── ai_export.py          # AI 分析用 Markdown 書き出し(通信しない)
+├── src/
+│   └── shukatsu_tracker/
+│       ├── constants.py      # 選択肢の定義(応募経路・選考ステップ等)
+│       ├── db.py             # SQLite 読み書き(唯一 DB に触る層)
+│       ├── analytics.py      # 集計ロジック(DB 非依存の純粋関数)
+│       ├── research.py       # 企業研究リンク生成(通信しない。URL 組み立てのみ)
+│       └── ai_export.py      # AI 分析用 Markdown 書き出し(通信しない)
 ├── scripts/demo_data.py      # デモデータ生成(架空企業)
 ├── tests/                    # 単体テスト + AppTest 画面スモークテスト
 └── docs/                     # 設計文書(このフォルダ)
 ```
+
+src レイアウト採用の理由: 「インストールされたパッケージ」と「リポジトリ直下の雑多なファイル」を
+物理的に分離し、テストが必ずインストール済みパッケージに対して走るようにするため。
 
 ## レイヤー設計
 
