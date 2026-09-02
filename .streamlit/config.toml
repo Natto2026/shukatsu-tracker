@@ -5,3 +5,27 @@ address = "127.0.0.1"
 # Streamlit の利用統計送信を無効化
 [browser]
 gatherUsageStats = false
+
+# 開発用ツールバー(Deploy ボタン等)を表示しない
+[client]
+toolbarMode = "minimal"
+
+[theme]
+base = "light"
+# 日本語グリフを優先するフォールバック順(未インストール環境では sans-serif に落ちる)
+font = "'Noto Sans JP', 'Yu Gothic UI', sans-serif"
+primaryColor = "#2f6fb2"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f5f6f8"
+textColor = "#24292f"
+linkColor = "#2f6fb2"
+borderColor = "#dfe3e8"
+showWidgetBorder = true
+baseRadius = "small"
+# デフォルトの h1(2.75rem)は画面タイトルには大きすぎるため全体に一段小さく
+headingFontSizes = ["1.7rem", "1.35rem", "1.15rem", "1rem", "0.9rem", "0.85rem"]
+# チャートの既定系列色(通過/落選など意味を持つ色は各チャート側で明示する)
+chartCategoricalColors = ["#2f6fb2", "#6a9a58", "#c0704f", "#8a8fa3", "#9a7bab", "#b3a04e"]
+
+[theme.sidebar]
+backgroundColor = "#eef1f5"
