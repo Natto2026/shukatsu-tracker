@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-import sqlite3
-
 import pytest
 
-from shukatsu_tracker.db import CompanyRepository, EsAnswerRepository, StepRepository
+from shukatsu_tracker.db import (
+    CompanyRepository,
+    DuplicateKeyError,
+    EsAnswerRepository,
+    StepRepository,
+)
 from shukatsu_tracker.models import Company, EsAnswer, Step
 
 
@@ -26,11 +29,10 @@ def answers(conn) -> EsAnswerRepository:
 
 
 class TestCompanyRepository:
-    def test_add_and_get_roundtrip(self, companies, conn):
+    def test_add_and_get_roundtrip(self, companies):
         company_id = companies.add(
             Company(name="テスト株式会社", route="スカウト・逆求人", priority="A")
         )
-        conn.commit()
         stored = companies.get(company_id)
         assert stored is not None
         assert stored.name == "テスト株式会社"
@@ -44,7 +46,7 @@ class TestCompanyRepository:
 
     def test_duplicate_name_is_rejected(self, companies):
         companies.add(Company(name="テスト株式会社"))
-        with pytest.raises(sqlite3.IntegrityError):
+        with pytest.raises(DuplicateKeyError):
             companies.add(Company(name="テスト株式会社"))
 
     def test_get_returns_none_for_missing_row(self, companies):

@@ -6,9 +6,13 @@
 
 from __future__ import annotations
 
-import sqlite3
-
-from ..db import CompanyRepository, EsAnswerRepository, ReviewRepository, transaction
+from ..db import (
+    CompanyRepository,
+    Database,
+    EsAnswerRepository,
+    ReviewRepository,
+    transaction,
+)
 from ..models import EsAnswer, Review
 from ..review import criteria as criteria_module
 from ..review import prompt as prompt_module
@@ -20,11 +24,11 @@ from ..review.providers import ExportProvider, ReviewProvider
 class ReviewService:
     """設問と回答に対して所見を取り、履歴として残す。"""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
-        self._conn = conn
-        self._reviews = ReviewRepository(conn)
-        self._answers = EsAnswerRepository(conn)
-        self._companies = CompanyRepository(conn)
+    def __init__(self, db: Database) -> None:
+        self._db = db
+        self._reviews = ReviewRepository(db)
+        self._answers = EsAnswerRepository(db)
+        self._companies = CompanyRepository(db)
 
     # --- 観点 ---------------------------------------------------------
 
@@ -100,7 +104,7 @@ class ReviewService:
             result=result.text,
             answer_snapshot=answer.answer,
         )
-        with transaction(self._conn):
+        with transaction(self._db):
             review_id = self._reviews.add(record)
         stored = self._reviews.get(review_id)
         if stored is None:  # pragma: no cover - 直前に書いた行が読めない場合
@@ -116,5 +120,5 @@ class ReviewService:
         return self._reviews.latest_for_answer(es_answer_id)
 
     def delete(self, review_id: int) -> None:
-        with transaction(self._conn):
+        with transaction(self._db):
             self._reviews.delete(review_id)

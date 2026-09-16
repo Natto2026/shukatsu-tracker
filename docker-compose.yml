@@ -1,0 +1,26 @@
+# PostgreSQL を試すための開発用の構成。既定の SQLite では不要。
+#
+#   docker compose up -d
+#   pip install -e ".[dev,postgres]"
+#   SHUKATSU_DB=postgresql://shukatsu:devpass@127.0.0.1:5432/shukatsu streamlit run app.py
+#
+# ここで待ち受けるのは 127.0.0.1 のみ。外部からは接続できない。
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: shukatsu
+      POSTGRES_PASSWORD: devpass
+      POSTGRES_DB: shukatsu
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shukatsu"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

@@ -17,6 +17,7 @@ jobs:
       - run: ruff check .
 
   test:
+    name: test (SQLite, Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -28,3 +29,33 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
       - run: python -m pytest -v
+
+  test-postgres:
+    # 同じテストを、実際の PostgreSQL に対しても走らせる。
+    # 方言の差（プレースホルダ・主キー・日付関数・例外の型）が
+    # 抜けていないことを、ここで検出する。
+    name: test (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: shukatsu_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev,postgres]"
+      - run: python -m pytest -v
+        env:
+          SHUKATSU_TEST_DSN: postgresql://postgres:postgres@127.0.0.1:5432/shukatsu_test

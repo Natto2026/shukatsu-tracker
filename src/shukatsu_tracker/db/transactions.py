@@ -1,32 +1,46 @@
 """トランザクション境界。
 
-sqlite3 の既定（isolation_level=""）は DDL を暗黙コミットしてしまい、
-「まとめて成功するか、まとめて失敗するか」を保証できない。そのため接続側で
-自動トランザクションを切り、開始と終了をこのモジュールだけが発行する。
+BEGIN と COMMIT を発行するのはこのモジュールだけ。
+
+境界の間は接続のロックを握り続ける。握らずに「いまトランザクション中か」を
+接続の状態から判定すると、別スレッドが開けたトランザクションを自分のものと
+誤認し、相手の ROLLBACK で自分の書き込みが消える。入れ子の判定は接続の状態
+ではなく、この層が数える深さで行う。
 """
 
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 
+from .database import Database
+
 
 @contextmanager
-def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+def transaction(db: Database) -> Iterator[Database]:
     """まとめて成功するか、まとめて失敗するかのどちらかにする。
 
-    すでにトランザクションの中なら何も発行せず、外側の境界に委ねる
-    （入れ子で BEGIN すると sqlite がエラーにするため）。
+    同じスレッドからの入れ子は、いちばん外側の境界にまとめる。
+    別スレッドはロックの解放を待ってから自分の境界を開く。
     """
-    if conn.in_transaction:
-        yield conn
-        return
-
-    conn.execute("BEGIN")
+    db.lock.acquire()
+    outermost = db.depth == 0
     try:
-        yield conn
-    except BaseException:
-        conn.execute("ROLLBACK")
-        raise
-    conn.execute("COMMIT")
+        if outermost:
+            db.begin()
+        else:
+            db.enter()
+        try:
+            yield db
+        except BaseException:
+            if outermost:
+                db.rollback()
+            else:
+                db.leave()
+            raise
+        if outermost:
+            db.commit()
+        else:
+            db.leave()
+    finally:
+        db.lock.release()

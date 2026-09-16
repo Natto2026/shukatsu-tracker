@@ -14,9 +14,12 @@ shukatsu-tracker/
 │       ├── ai_export.py          # 分析用 Markdown 書き出し（通信しない）
 │       ├── db/                   # 永続化層
 │       │   ├── connection.py     # 接続（この層だけが接続を作る）
+│       │   ├── database.py       # 接続の薄い包み（方言変換・例外翻訳・排他）
+│       │   ├── dialects.py       # DBMS ごとの差分（SQLite / PostgreSQL）
+│       │   ├── errors.py         # 共通の例外（ドライバ固有の型を外に出さない）
 │       │   ├── transactions.py   # トランザクション境界
 │       │   ├── migrations.py     # スキーマのバージョン適用
-│       │   ├── migrations/*.sql  # スキーマ本体（連番。追記のみ）
+│       │   ├── migrations/*.sql  # スキーマ本体（連番。追記のみ。方言共通）
 │       │   └── repositories.py   # テーブルごとの読み書き（SQL を書く唯一の場所）
 │       ├── review/               # 回答への所見
 │       │   ├── criteria.py       # 観点の読み込みと業界ごとの合成
@@ -28,7 +31,8 @@ shukatsu-tracker/
 │           ├── es.py             # 設問・回答の保存と検索
 │           └── review.py         # 所見を取る順序の固定と履歴の保存
 ├── scripts/demo_data.py          # デモデータ生成（架空企業）
-├── tests/                        # 層ごとの単体テスト + AppTest 画面スモークテスト
+├── docker-compose.yml            # PostgreSQL を手元で試す場合の構成（既定では不要）
+├── tests/                        # 層ごとの単体テスト + AppTest による画面のテスト
 └── docs/                         # 設計文書（このフォルダ）
 ```
 
@@ -52,13 +56,15 @@ flowchart TB
     end
     subgraph db["db/（永続化層）"]
         REPO["repositories.py"]
+        DBF["database.py<br>(方言変換・例外翻訳・排他)"]
         TX["transactions.py"]
         MIG["migrations.py + *.sql"]
+        DIA["dialects.py<br>(SQLite / PostgreSQL)"]
     end
     AN["analytics.py<br>(集計・純粋関数)"]
     EX["ai_export.py<br>(Markdown 書き出し)"]
     MD["models.py<br>(共通の型)"]
-    SQL[("data/shukatsu.db<br>ローカル SQLite")]
+    SQL[("保存先<br>SQLite または PostgreSQL")]
 
     UI --> SEL
     UI --> ES
@@ -71,9 +77,11 @@ flowchart TB
     SEL --> AN
     SEL --> REPO
     ES --> REPO
-    REPO --> TX
+    REPO --> DBF
+    DBF --> TX
+    DBF --> DIA
     TX --> SQL
-    MIG --> SQL
+    MIG --> DBF
     EX --> AN
     MD -.->|全層が参照する語彙| services
 ```
@@ -86,11 +94,26 @@ flowchart TB
 | `services/` | 業務ルール（既定ステップの一括登録、入力の検証、トランザクションの単位） | SQL を書く、Streamlit に触る |
 | `db/repositories.py` | テーブルごとの読み書き、行とモデルの変換 | 業務ルールを持つ |
 | `analytics.py` | 集計。入力は `StepView` の列だけ | DB・UI に触れる |
+| `db/database.py` | 方言の変換、例外の翻訳、書き込みの直列化 | テーブルごとの事情を持つ |
 | `review/` | 観点の読み込み、依頼文の組み立て、実行先の抽象化 | DB に触れる、実行先を勝手に選ぶ |
+
+## 画面の方針
+
+- **描画で書き込まない。** 保存は利用者が押したときだけ行う。開いただけで保存が
+  走る作りは、別のタブや端末で更新された内容を古い表示のまま上書きする。
+- **入力欄の key に保存済みの値を含める。** Streamlit は key を持つウィジェットの
+  値をセッションに残すため、DB が変わっても古い値が残り続ける。key を値に連動
+  させると、更新があったときに入力欄が作り直される。
+- **保存時にも突き合わせる。** 表示した時点の値と現在の値がずれていれば、その行は
+  書かずに利用者へ知らせる。
+- **利用者の入力を Markdown として解釈しない。** 企業名・メモ・URL は表示前に
+  エスケープする。URL は scheme を確認してからリンクにする。
+- **破壊的な操作には確認を挟む。** 何が失われるかを書いたうえで、確認してから実行する。
 
 ## 設計原則
 
-1. **ローカル完結** — データは `data/*.db` のみ。外部送信ゼロ。サーバーは 127.0.0.1 バインド
+1. **ローカル完結（既定）** — 既定の保存先は `data/*.db` のみ。外部送信ゼロ。
+   サーバーは 127.0.0.1 バインド。PostgreSQL を別ホストに向けた場合はこの前提が変わる
 2. **認証情報を持たない** — パスワードは保存しない。マイページ URL・ログイン用メールは
    保存するが書き出しには含めない（回帰テストで保証）
 3. **外部とはファイルで受け渡す** — アプリは通信せず Markdown を書き出すだけ。
@@ -121,16 +144,25 @@ flowchart TB
 - **スキーマは SQL ファイルで管理する。** `db/migrations/NNN_name.sql` を追加すると、
   次回の接続時に未適用のものだけが順に流れ、`schema_migrations` テーブルに記録される。
   既存の DB を作り直さずに列やテーブルを足せる。適用済みのファイルは変更しない（追記のみ）。
-- **トランザクションは明示的に開く。** sqlite3 の既定は DDL を暗黙コミットしてしまい
-  「まとめて成功するか、まとめて失敗するか」を保証できないため、接続時に自動
-  トランザクションを切り、`transactions.transaction()` だけが BEGIN / COMMIT を発行する。
+- **トランザクションは明示的に開き、境界の間はロックを握る。** ドライバ既定の
+  暗黙トランザクションは DDL をコミットしてしまい「まとめて成功するか、まとめて
+  失敗するか」を保証できないため、自動トランザクションを切り、
+  `transactions.transaction()` だけが BEGIN / COMMIT を発行する。
+  入れ子かどうかは接続の状態ではなくこの層が数える深さで判定する。接続の状態で
+  判定すると、別スレッドが開けたトランザクションを自分のものと誤認し、相手の
+  ROLLBACK で自分の書き込みが消える。
 - **更新できる列は列挙する。** 列名はプレースホルダに置けないため、リポジトリごとに
   `writable` を持ち、そこにない列が渡されたら SQL に届く前に `ValueError` にする。
-- **DB を差し替える場合の入口は1か所。** SQL は `repositories.py` にしかないため、
-  別の DBMS に移す場合もこのファイルと接続処理だけが対象になる。
+- **DB は差し替えられる。** SQLite と PostgreSQL に対応する。SQL は1組のまま、
+  方言の差（プレースホルダ・主キーの書き方・日付関数・例外の型）は `dialects.py`
+  に閉じる。マイグレーションの SQL では `{{PK}}` などの差し込み記号で吸収する。
+  同じテスト一式を両方の DBMS に対して CI で走らせ、差分の抜けを検出する。
+- **ドライバの例外を外に出さない。** 一意制約違反などは `errors.py` の共通の型に
+  翻訳する。DB を替えても、サービス層と画面のエラー処理を書き換えずに済む。
 
 ## 開発フロー
 
 Issue 起点 → `feature/xxx` または `fix/xxx` ブランチ → ruff + pytest をローカルで通す →
-Pull Request（CI: lint + test 3.11/3.13）→ マージ → ブランチ削除。
+Pull Request（CI: lint、SQLite で 3.11/3.13、実際の PostgreSQL で同じテスト一式）
+→ マージ → ブランチ削除。
 節目で CHANGELOG を更新し、セマンティックバージョニングでタグ+リリースを切る。

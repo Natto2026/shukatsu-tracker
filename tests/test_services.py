@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import date, timedelta
 
 import pytest
 
 from shukatsu_tracker import constants
+from shukatsu_tracker.db import DuplicateKeyError
 from shukatsu_tracker.models import Company, EsAnswer
 
 
@@ -36,7 +36,7 @@ class TestAddCompany:
     def test_duplicate_name_leaves_no_orphan_steps(self, selection):
         """企業の登録に失敗したら、既定ステップも書かれていないこと。"""
         selection.add_company(Company(name="テスト株式会社"))
-        with pytest.raises(sqlite3.IntegrityError):
+        with pytest.raises(DuplicateKeyError):
             selection.add_company(Company(name="テスト株式会社"))
         assert len(selection.all_step_views()) == len(constants.DEFAULT_STEPS)
 
@@ -100,12 +100,8 @@ class TestDashboard:
         for name in ["A社", "B社", "C社"]:
             selection.add_company(Company(name=name))
 
-        executed: list[str] = []
-        conn.set_trace_callback(executed.append)
-        try:
+        with conn.record() as executed:
             selection.dashboard(date.today())
-        finally:
-            conn.set_trace_callback(None)
 
         step_queries = [sql for sql in executed if "FROM steps" in sql]
         assert len(step_queries) == 1
