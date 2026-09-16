@@ -15,7 +15,7 @@ from shukatsu_tracker.models import Company
 from shukatsu_tracker.services import SelectionService
 
 APP_PATH = str(Path(__file__).parent.parent / "app.py")
-PAGES = ["ダッシュボード", "企業管理", "ES管理", "分析", "書き出し"]
+PAGES = ["ダッシュボード", "企業管理", "ES管理", "添削", "分析", "書き出し"]
 
 
 @pytest.fixture

@@ -1,0 +1,31 @@
+# インフラ 向けの上乗せ観点。共通の観点（base.toml）に追加して使う。
+# 特定の企業の評価基準ではなく、その業界の読み手が気にしやすい点の整理。
+
+[meta]
+name = "インフラ"
+matches = "インフラ"
+reader = """止められない設備やサービスを長く支える仕事のため、
+安全・継続・公平さへの意識と、多くの関係者との合意形成を見られやすい。"""
+emphasis = ["stakeholders", "cause_analysis", "process_behind_result", "not_an_impression"]
+
+[[criteria]]
+id = "public_responsibility"
+title = "社会的な責任への意識"
+check = """自分の判断が周囲にどう影響するかを考えた場面があるか。
+一部の人だけが不利にならないよう配慮した判断が書かれているか。"""
+weak = "成果は書かれているが、影響を受ける側への配慮が見えない。"
+weight = 2
+
+[[criteria]]
+id = "continuity"
+title = "続く仕組みにしたか"
+check = """その場しのぎで終わらせず、次に引き継げる形にしたかが書かれているか。"""
+weak = "その回は解決したが、再発防止や引き継ぎに触れていない。"
+weight = 1
+
+[[criteria]]
+id = "stakeholders"
+title = "立場の違う相手との調整"
+check = """利害や前提が異なる相手と、どう合意をつくったかが書かれているか。"""
+weak = "関係者が出てくるが、意見の食い違いや調整の中身が書かれていない。"
+weight = 3

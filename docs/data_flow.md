@@ -41,6 +41,7 @@
 | `companies` | 企業マスタ | 企業名は UNIQUE。パスワード列は意図的に持たない |
 | `steps` | 選考ステップ（企業:ステップ = 1:N） | 企業削除で連動削除（CASCADE） |
 | `es_answers` | 設問・回答（企業に紐付くか汎用） | 企業を削除しても回答は残す（SET NULL）。書いた文章は資産のため |
+| `reviews` | 回答への所見の履歴 | 評価時点の本文を控える。回答削除で連動削除（CASCADE） |
 | `schema_migrations` | 適用済みスキーマの記録 | `db/migrations/*.sql` の版管理に使う |
 
 ## 型の流れ
@@ -51,6 +52,9 @@
 | `StepView` | `StepRepository.list_views()`（企業情報を結合） | 集計の唯一の入力 |
 | `Deadline` / `PassRate` / `FunnelRow` | `analytics.py` | 画面表示・書き出し |
 | `DashboardSummary` | `SelectionService.dashboard()` | ダッシュボードの数字 |
+| `CriteriaSet` / `Criterion` | `review/criteria.py`（TOML から） | 依頼文の組み立て・画面表示 |
+| `ReviewRequest` / `ReviewResult` | `review/` | 実行先とのやり取り |
+| `Review` | `ReviewService.run()` | 履歴の保存と表示 |
 
 層をまたぐ受け渡しに dict を使わないのは、キー名の打ち間違いが実行時まで
 分からないため。表示名（「通過」「落選」などの日本語見出し）は UI 側で与える。
@@ -62,4 +66,6 @@
 | 選考データの保存・集計 | なし（ローカル SQLite のみ） |
 | 企業研究リンク | なし（検索 URL を組み立てるだけ。開くかは利用者次第） |
 | 分析用データの書き出し | なし（ファイル書き出しのみ） |
+| 回答の点検（既定） | なし（依頼文を組み立てて表示するだけ） |
+| 回答の点検（Claude API を選んだ場合） | あり。利用者が実行先として選び、送る文面を画面で確認したときだけ |
 | Streamlit 利用統計 | 送信オフ（.streamlit/config.toml） |

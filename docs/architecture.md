@@ -18,9 +18,15 @@ shukatsu-tracker/
 │       │   ├── migrations.py     # スキーマのバージョン適用
 │       │   ├── migrations/*.sql  # スキーマ本体（連番。追記のみ）
 │       │   └── repositories.py   # テーブルごとの読み書き（SQL を書く唯一の場所）
+│       ├── review/               # 回答への所見
+│       │   ├── criteria.py       # 観点の読み込みと業界ごとの合成
+│       │   ├── criteria/*.toml   # 観点の定義（データ。コード変更なしで追記できる）
+│       │   ├── prompt.py         # 依頼文の組み立て
+│       │   └── providers.py      # 実行先（既定は通信しない書き出しのみ）
 │       └── services/             # ユースケース層（UI が呼ぶ入口）
 │           ├── selection.py      # 企業・選考ステップの操作と集計の取りまとめ
-│           └── es.py             # 設問・回答の保存と検索
+│           ├── es.py             # 設問・回答の保存と検索
+│           └── review.py         # 所見を取る順序の固定と履歴の保存
 ├── scripts/demo_data.py          # デモデータ生成（架空企業）
 ├── tests/                        # 層ごとの単体テスト + AppTest 画面スモークテスト
 └── docs/                         # 設計文書（このフォルダ）
@@ -37,6 +43,12 @@ flowchart TB
     subgraph services["services/（ユースケース層）"]
         SEL["selection.py"]
         ES["es.py"]
+        RV["review.py"]
+    end
+    subgraph review["review/（所見）"]
+        CR["criteria.py + *.toml"]
+        PR["prompt.py"]
+        PV["providers.py"]
     end
     subgraph db["db/（永続化層）"]
         REPO["repositories.py"]
@@ -50,7 +62,12 @@ flowchart TB
 
     UI --> SEL
     UI --> ES
+    UI --> RV
     UI --> EX
+    RV --> CR
+    RV --> PR
+    RV --> PV
+    RV --> REPO
     SEL --> AN
     SEL --> REPO
     ES --> REPO
@@ -69,6 +86,7 @@ flowchart TB
 | `services/` | 業務ルール（既定ステップの一括登録、入力の検証、トランザクションの単位） | SQL を書く、Streamlit に触る |
 | `db/repositories.py` | テーブルごとの読み書き、行とモデルの変換 | 業務ルールを持つ |
 | `analytics.py` | 集計。入力は `StepView` の列だけ | DB・UI に触れる |
+| `review/` | 観点の読み込み、依頼文の組み立て、実行先の抽象化 | DB に触れる、実行先を勝手に選ぶ |
 
 ## 設計原則
 
@@ -80,6 +98,23 @@ flowchart TB
 4. **数字を文書にハードコードしない** — テスト件数などは CI ログを正とする
 5. **個人データをリポジトリに入れない** — `data/` は .gitignore。スクリーンショットも
    架空企業のデモデータで撮る
+
+## 所見の方針
+
+- **観点はコードではなくデータで持つ。** 書き方の基準は見直しが入るため、
+  `review/criteria/*.toml` を編集すれば増減できる。共通の観点に業界ごとの
+  上乗せを重ね、`emphasis` に共通観点の id を並べると重みが上がる。
+  これは一般的な書き方の整理であり、特定の組織の基準として提示しない
+  （その旨をテストで検証している）。
+- **実行先は差し替えられる。** `ReviewProvider` は「依頼文を受け取り所見を返す」
+  だけの形にしてあり、既定の実装は通信しない。通信する実装を足しても、
+  外部に出すかどうかを利用者が選ぶ前提が崩れない。
+- **認証情報は持たない。** API キーはアプリで受け取らず保存もしない。
+  SDK が実行環境の環境変数から解決したものを使う。
+- **送る前に見せる。** 組み立てた依頼文は実行前に画面へ出す。
+  何を渡すことになるのかが見えないまま送信されない。
+- **評価した時点の本文を控える。** 回答は後から書き換わるため、
+  所見と対応する文面を `answer_snapshot` に残す。
 
 ## 永続化の方針
 

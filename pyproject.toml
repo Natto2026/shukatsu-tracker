@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shukatsu-tracker"
-version = "0.4.0"
+version = "0.5.0"
 description = "就活の選考状況をローカルで一元管理・分析するツール"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "streamlit>=1.36",
     "pandas>=2.0",
@@ -14,19 +14,21 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.6"]
+# 通信する評価先を使う場合だけ必要。既定の書き出しのみなら不要。
+llm = ["anthropic>=0.40"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-shukatsu_tracker = ["db/migrations/*.sql"]
+shukatsu_tracker = ["db/migrations/*.sql", "review/criteria/*.toml", "review/criteria/industry/*.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 110
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 # E/F: pycodestyle/pyflakes, I: import順, B: バグの温床, UP: 新しい構文への追従, SIM: 単純化
