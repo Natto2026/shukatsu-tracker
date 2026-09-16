@@ -16,6 +16,9 @@ from .prompt import ReviewRequest
 
 DEFAULT_MODEL = "claude-opus-5"
 DEFAULT_MAX_TOKENS = 16000
+# 画面を止めたまま待たせないため、既定（10分×再試行）より短く切る
+DEFAULT_TIMEOUT_SECONDS = 120.0
+DEFAULT_MAX_RETRIES = 1
 API_KEY_ENV = "ANTHROPIC_API_KEY"
 
 
@@ -76,11 +79,15 @@ class AnthropicProvider:
         model: str = DEFAULT_MODEL,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         use_fallbacks: bool = True,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> None:
         self._client = client
         self.model = model
         self.max_tokens = max_tokens
         self.use_fallbacks = use_fallbacks
+        self.timeout = timeout
+        self.max_retries = max_retries
 
     @staticmethod
     def is_configured() -> bool:
@@ -99,7 +106,7 @@ class AnthropicProvider:
                 f"環境変数 {API_KEY_ENV} が設定されていません。"
                 "キーはアプリに保存せず、実行環境の環境変数から読み込みます。"
             )
-        return anthropic.Anthropic()
+        return anthropic.Anthropic(timeout=self.timeout, max_retries=self.max_retries)
 
     def review(self, request: ReviewRequest, prompt: str) -> ReviewResult:
         client = self._client or self._build_client()
@@ -147,8 +154,16 @@ class AnthropicProvider:
             raise ReviewError("送信の上限に達しました。時間をおいて試してください。") from error
         except anthropic.APIStatusError as error:
             raise ReviewError(f"API がエラーを返しました（{error.status_code}）。") from error
+        except anthropic.APITimeoutError as error:
+            raise ReviewError(
+                f"{self.timeout:.0f} 秒以内に応答がありませんでした。時間をおいて試してください。"
+            ) from error
         except anthropic.APIConnectionError as error:
             raise ReviewError("API に接続できませんでした。通信環境を確認してください。") from error
+        except TypeError as error:
+            raise ReviewError(
+                f'SDK がこの呼び出し方に対応していません: pip install -U "anthropic>=1.0"（{error}）'
+            ) from error
 
 
 def extract_text(response: Any) -> str:

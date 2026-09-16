@@ -55,11 +55,26 @@ class ReviewRequest:
         return len(self.answer)
 
 
+def _cell(text: str) -> str:
+    """表のセルに入れる。改行と縦棒は列の区切りを壊すため置き換える。"""
+    return text.replace("\n", " ").replace("|", "／").strip()
+
+
+def _fence_for(text: str) -> str:
+    """本文を囲む記号。本文中の連続バッククォートより1つ長くする。"""
+    longest = 0
+    run = 0
+    for char in text:
+        run = run + 1 if char == "`" else 0
+        longest = max(longest, run)
+    return "`" * max(3, longest + 1)
+
+
 def _criteria_table(criteria: CriteriaSet) -> str:
     lines = ["| 観点 | 重み | 見るところ | 弱いときの見え方 |", "|---|---|---|---|"]
     for criterion in criteria:
-        check = criterion.check.replace("\n", " ")
-        weak = criterion.weak.replace("\n", " ")
+        check = _cell(criterion.check)
+        weak = _cell(criterion.weak)
         lines.append(
             f"| {criterion.title} | {criterion.emphasis_label} | {check} | {weak} |"
         )
@@ -77,8 +92,18 @@ def _target_block(request: ReviewRequest) -> str:
     else:
         lines.append(f"- 文字数: {request.length}（制限の指定なし）")
     if request.note:
-        lines.append(f"- 書き手からの補足: {request.note}")
-    lines += ["", "### 回答本文", "", request.answer.strip()]
+        lines.append(f"- 書き手からの補足: {_cell(request.note)}")
+    # 本文は囲って渡す。見出しや表を含む回答が、下の指示や観点の表を
+    # 上書きして読まれないようにするため。
+    fence = _fence_for(request.answer)
+    lines += [
+        "",
+        "### 回答本文（囲みの内側だけが評価の対象）",
+        "",
+        fence,
+        request.answer.strip(),
+        fence,
+    ]
     return "\n".join(lines)
 
 

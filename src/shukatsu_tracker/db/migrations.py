@@ -1,19 +1,22 @@
 """スキーマのバージョン管理。
 
 スキーマをコード中の文字列ではなく連番の .sql ファイルで持ち、適用済みの
-バージョンを schema_migrations テーブルに記録する。こうすると既存の DB を
-作り直さずに列やテーブルを足せる（ファイルを1枚足せば次の起動時に適用される）。
+バージョンを schema_migrations テーブルに記録する。既存の DB を作り直さずに
+列やテーブルを足せる（ファイルを1枚足せば次の接続時に適用される）。
 
+方言差は差し込み記号（{{PK}} など）で吸収するため、SQL ファイルは1組で足りる。
 1ファイル＝1トランザクション。途中で失敗したら、そのファイルの変更は残さない。
 """
 
 from __future__ import annotations
 
 import re
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+from .database import Database
+from .dialects import NOW
+from .errors import DuplicateKeyError, MigrationError
 from .transactions import transaction
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
@@ -23,7 +26,7 @@ _BOOTSTRAP = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    applied_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+    applied_at TEXT NOT NULL
 )
 """
 
@@ -38,29 +41,69 @@ class Migration:
         return split_statements(self.path.read_text(encoding="utf-8"))
 
 
+def strip_comments(sql: str) -> str:
+    """行コメントとブロックコメントを取り除く。文字列リテラルの中は残す。"""
+    out: list[str] = []
+    index = 0
+    length = len(sql)
+    quote: str | None = None
+    while index < length:
+        char = sql[index]
+        if quote is not None:
+            out.append(char)
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+        if char in ("'", '"'):
+            quote = char
+            out.append(char)
+            index += 1
+            continue
+        if sql.startswith("--", index):
+            end = sql.find("\n", index)
+            index = length if end == -1 else end
+            continue
+        if sql.startswith("/*", index):
+            end = sql.find("*/", index + 2)
+            if end == -1:
+                raise ValueError("ブロックコメントが閉じられていません")
+            index = end + 2
+            continue
+        out.append(char)
+        index += 1
+    if quote is not None:
+        raise ValueError("文字列リテラルが閉じられていません")
+    return "".join(out)
+
+
 def split_statements(sql: str) -> list[str]:
     """SQL を文ごとに分ける。
 
-    executescript は暗黙コミットを挟むため使えない。文字列リテラル中の
-    セミコロンで誤分割しないよう、区切りの判定は sqlite 自身に任せる。
+    ドライバの executescript は暗黙コミットを挟むため使えず、多くの
+    ドライバは1回の execute で複数文を受け付けない。コメントを外してから
+    文字列リテラルの外のセミコロンで区切る。
     """
+    body = strip_comments(sql)
     statements: list[str] = []
-    buffer = ""
-    for line in sql.splitlines(keepends=True):
-        buffer += line
-        if buffer.strip() and sqlite3.complete_statement(buffer):
-            statements.append(buffer.strip())
-            buffer = ""
-    if _has_code(buffer):
-        raise ValueError(f"SQL が文の途中で終わっています: {buffer.strip()[:60]}")
+    buffer: list[str] = []
+    quote: str | None = None
+    for char in body:
+        if quote is None and char in ("'", '"'):
+            quote = char
+        elif quote is not None and char == quote:
+            quote = None
+        if char == ";" and quote is None:
+            text = "".join(buffer).strip()
+            if text:
+                statements.append(text)
+            buffer = []
+            continue
+        buffer.append(char)
+    trailing = "".join(buffer).strip()
+    if trailing:
+        raise ValueError(f"SQL がセミコロンで終わっていません: {trailing[:60]}")
     return statements
-
-
-def _has_code(sql: str) -> bool:
-    """空行とコメントだけでないか。"""
-    return any(
-        line.strip() and not line.strip().startswith("--") for line in sql.splitlines()
-    )
 
 
 def discover(directory: Path = MIGRATIONS_DIR) -> list[Migration]:
@@ -77,28 +120,44 @@ def discover(directory: Path = MIGRATIONS_DIR) -> list[Migration]:
     return found
 
 
-def applied_versions(conn: sqlite3.Connection) -> set[str]:
-    with transaction(conn):
-        conn.execute(_BOOTSTRAP)
-    rows = conn.execute("SELECT version FROM schema_migrations").fetchall()
-    return {row[0] for row in rows}
+def applied_versions(db: Database) -> set[str]:
+    with transaction(db):
+        db.execute(_BOOTSTRAP)
+    rows = db.fetchall("SELECT version FROM schema_migrations")
+    return {_first(row) for row in rows}
 
 
-def apply_pending(
-    conn: sqlite3.Connection, directory: Path = MIGRATIONS_DIR
-) -> list[Migration]:
+def apply_pending(db: Database, directory: Path = MIGRATIONS_DIR) -> list[Migration]:
     """未適用のマイグレーションを順に流し、適用したものを返す。"""
-    done = applied_versions(conn)
+    done = applied_versions(db)
     applied: list[Migration] = []
     for migration in discover(directory):
         if migration.version in done:
             continue
-        with transaction(conn):
-            for statement in migration.statements():
-                conn.execute(statement)
-            conn.execute(
-                "INSERT INTO schema_migrations (version, name) VALUES (?, ?)",
-                (migration.version, migration.name),
+        try:
+            now_expression = db.dialect.substitutions()[NOW]
+            record_sql = (
+                "INSERT INTO schema_migrations (version, name, applied_at) "
+                f"VALUES (?, ?, {now_expression})"
             )
+            with transaction(db):
+                for statement in migration.statements():
+                    db.execute(statement)
+                db.execute(record_sql, (migration.version, migration.name))
+        except DuplicateKeyError:
+            # 別のプロセスが同じバージョンを先に適用した。DDL は IF NOT EXISTS
+            # で冪等なので、記録の重複だけを無視して次へ進む。
+            continue
+        except Exception as error:
+            raise MigrationError(
+                f"{migration.path.name} の適用に失敗しました: {error}"
+            ) from error
         applied.append(migration)
     return applied
+
+
+def _first(row: object) -> str:
+    """ドライバによって行が dict にも tuple にもなるため、先頭列を取り出す。"""
+    if isinstance(row, dict):
+        return str(next(iter(row.values())))
+    return str(row[0])  # type: ignore[index]
