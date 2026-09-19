@@ -7,6 +7,7 @@ SQL の本体は1つに保ち、方言による違い（プレースホルダ・
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -188,10 +189,20 @@ def describe(target: str | Path, base: Path | None = None) -> str:
     text = str(target)
     if text.startswith(("postgresql://", "postgres://")):
         return "PostgreSQL（サーバー型）"
-    path = Path(text)
     if base is not None:
         try:
-            return f"SQLite（{path.relative_to(base).as_posix()}）"
+            return f"SQLite（{Path(text).relative_to(base).as_posix()}）"
         except ValueError:
             pass
-    return f"SQLite（{path.name}）"
+    # Path に任せると、動作中の OS の区切り文字しか見ない。Windows で作った
+    # パスを Linux で表示すると分解されず、そのまま出てしまう。
+    return f"SQLite（{_last_segment(text)}）"
+
+
+_SEPARATORS = re.compile(r"[/\\]")
+
+
+def _last_segment(text: str) -> str:
+    """OS に関係なく、パスの最後の要素だけを取り出す。"""
+    segments = [part for part in _SEPARATORS.split(text) if part]
+    return segments[-1] if segments else text
