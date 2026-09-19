@@ -190,3 +190,32 @@ def test_write_through_the_app_is_visible_to_another_connection(app_db):
     finally:
         database.close()
     assert "新規株式会社" in names
+
+
+class TestTargetIsNotLeaked:
+    """保存先の表示から、利用者名やパスワードが漏れないこと。"""
+
+    def test_connection_string_never_shows_the_password(self):
+        described = db.describe("postgresql://someone:s3cret@10.0.0.5:5432/shukatsu")
+        assert "s3cret" not in described
+        assert "someone" not in described
+        assert "10.0.0.5" not in described
+        assert "PostgreSQL" in described
+
+    def test_path_outside_the_app_is_reduced_to_a_file_name(self):
+        described = db.describe(r"C:\Users\somebody\Desktop\仕事\data\shukatsu.db")
+        assert "somebody" not in described
+        assert "仕事" not in described
+        assert "shukatsu.db" in described
+
+    def test_path_inside_the_app_stays_relative(self, tmp_path):
+        described = db.describe(tmp_path / "data" / "demo.db", base=tmp_path)
+        assert described == "SQLite（data/demo.db）"
+
+    def test_sidebar_does_not_render_the_absolute_path(self, app_db):
+        at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+        assert not at.exception, at.exception
+        captions = " ".join(c.value for c in at.sidebar.caption)
+        assert str(app_db) not in captions
+        assert str(app_db.parent) not in captions
+        assert "app.db" in captions

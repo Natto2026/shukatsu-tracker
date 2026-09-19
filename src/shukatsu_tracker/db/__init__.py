@@ -2,6 +2,7 @@
 
 from .connection import connect, transaction
 from .database import Database
+from .dialects import describe
 from .errors import DatabaseError, DuplicateKeyError, ForeignKeyError, MigrationError
 from .repositories import (
     CompanyRepository,
@@ -21,5 +22,6 @@ __all__ = [
     "ReviewRepository",
     "StepRepository",
     "connect",
+    "describe",
     "transaction",
 ]

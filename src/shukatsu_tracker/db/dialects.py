@@ -176,3 +176,22 @@ def resolve(target: str | Path) -> tuple[Dialect, str]:
     if parsed.scheme and len(parsed.scheme) > 1:
         raise ValueError(f"対応していない接続先です: {parsed.scheme}")
     return SqliteDialect(), text
+
+
+def describe(target: str | Path, base: Path | None = None) -> str:
+    """接続先を、画面に出してよい形に要約する。
+
+    接続文字列にはパスワードが、ファイルパスには利用者名やフォルダ構成が
+    含まれる。画面共有やスクリーンショットでそのまま漏れるため、
+    種別と最小限の識別子だけを返す。
+    """
+    text = str(target)
+    if text.startswith(("postgresql://", "postgres://")):
+        return "PostgreSQL（サーバー型）"
+    path = Path(text)
+    if base is not None:
+        try:
+            return f"SQLite（{path.relative_to(base).as_posix()}）"
+        except ValueError:
+            pass
+    return f"SQLite（{path.name}）"
