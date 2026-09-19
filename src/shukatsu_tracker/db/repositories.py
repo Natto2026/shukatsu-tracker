@@ -1,0 +1,241 @@
+"""テーブルごとの読み書き。SQL を書いてよいのはこの層だけ。
+
+値は必ずプレースホルダで渡す。列名はプレースホルダに置けないため、更新できる列を
+リポジトリごとの writable に列挙し、それ以外は ValueError にする
+（呼び出し側の打ち間違いが SQL に混ざらないようにするため）。
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+from ..models import Company, EsAnswer, Step, StepView
+
+# 志望度は文字列順だと S が末尾に来るため、意味の順（S→A→B→C）を明示する
+_PRIORITY_ORDER = (
+    "CASE priority WHEN 'S' THEN 0 WHEN 'A' THEN 1 "
+    "WHEN 'B' THEN 2 WHEN 'C' THEN 3 ELSE 4 END"
+)
+
+
+class _Table:
+    """更新列の検証と、INSERT / UPDATE 文の組み立てを共通化する。"""
+
+    table: str
+    writable: frozenset[str]
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def _checked(self, fields: Mapping[str, Any]) -> dict[str, Any]:
+        unknown = set(fields) - self.writable
+        if unknown:
+            raise ValueError(f"{self.table} に書き込めない列が指定されました: {sorted(unknown)}")
+        return dict(fields)
+
+    def _update(self, row_id: int, fields: Mapping[str, Any]) -> None:
+        values = self._checked(fields)
+        if not values:
+            return
+        assignments = ", ".join(f"{column} = ?" for column in values)
+        self._conn.execute(
+            f"UPDATE {self.table} SET {assignments} WHERE id = ?",
+            [*values.values(), row_id],
+        )
+
+    def _insert(self, fields: Mapping[str, Any]) -> int:
+        values = self._checked(fields)
+        columns = ", ".join(values)
+        placeholders = ", ".join("?" * len(values))
+        cursor = self._conn.execute(
+            f"INSERT INTO {self.table} ({columns}) VALUES ({placeholders})",
+            list(values.values()),
+        )
+        inserted = cursor.lastrowid
+        if inserted is None:
+            raise RuntimeError(f"{self.table} への INSERT で id を取得できませんでした")
+        return inserted
+
+    def delete(self, row_id: int) -> None:
+        self._conn.execute(f"DELETE FROM {self.table} WHERE id = ?", (row_id,))
+
+
+class CompanyRepository(_Table):
+    table = "companies"
+    writable = frozenset(
+        {
+            "name",
+            "industry",
+            "priority",
+            "route",
+            "test_type",
+            "mypage_url",
+            "login_email",
+            "memo",
+        }
+    )
+
+    @staticmethod
+    def _to_model(row: sqlite3.Row) -> Company:
+        return Company(
+            id=row["id"],
+            name=row["name"],
+            industry=row["industry"],
+            priority=row["priority"],
+            route=row["route"],
+            test_type=row["test_type"],
+            mypage_url=row["mypage_url"],
+            login_email=row["login_email"],
+            memo=row["memo"],
+            created_at=row["created_at"],
+        )
+
+    def add(self, company: Company) -> int:
+        return self._insert(
+            {
+                "name": company.name,
+                "industry": company.industry,
+                "priority": company.priority,
+                "route": company.route,
+                "test_type": company.test_type,
+                "mypage_url": company.mypage_url,
+                "login_email": company.login_email,
+                "memo": company.memo,
+            }
+        )
+
+    def update(self, company_id: int, **fields: Any) -> None:
+        self._update(company_id, fields)
+
+    def get(self, company_id: int) -> Company | None:
+        row = self._conn.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone()
+        return None if row is None else self._to_model(row)
+
+    def list_all(self) -> list[Company]:
+        rows = self._conn.execute(
+            f"SELECT * FROM companies ORDER BY {_PRIORITY_ORDER}, name"
+        ).fetchall()
+        return [self._to_model(row) for row in rows]
+
+
+class StepRepository(_Table):
+    table = "steps"
+    writable = frozenset({"company_id", "name", "deadline", "result", "memo", "sort_order"})
+
+    @staticmethod
+    def _to_model(row: sqlite3.Row) -> Step:
+        return Step(
+            id=row["id"],
+            company_id=row["company_id"],
+            name=row["name"],
+            deadline=row["deadline"],
+            result=row["result"],
+            memo=row["memo"],
+            sort_order=row["sort_order"],
+        )
+
+    @staticmethod
+    def _to_view(row: sqlite3.Row) -> StepView:
+        return StepView(
+            id=row["id"],
+            company_id=row["company_id"],
+            company_name=row["company_name"],
+            name=row["name"],
+            deadline=row["deadline"],
+            result=row["result"],
+            memo=row["memo"],
+            sort_order=row["sort_order"],
+            industry=row["industry"],
+            route=row["route"],
+            test_type=row["test_type"],
+        )
+
+    def add(self, step: Step) -> int:
+        return self._insert(
+            {
+                "company_id": step.company_id,
+                "name": step.name,
+                "deadline": step.deadline,
+                "result": step.result,
+                "memo": step.memo,
+                "sort_order": step.sort_order,
+            }
+        )
+
+    def add_many(self, steps: Sequence[Step]) -> list[int]:
+        return [self.add(step) for step in steps]
+
+    def update(self, step_id: int, **fields: Any) -> None:
+        self._update(step_id, fields)
+
+    def list_for_company(self, company_id: int) -> list[Step]:
+        rows = self._conn.execute(
+            "SELECT * FROM steps WHERE company_id = ? ORDER BY sort_order, id",
+            (company_id,),
+        ).fetchall()
+        return [self._to_model(row) for row in rows]
+
+    def list_views(self) -> list[StepView]:
+        """全ステップに企業情報を結合して返す。集計の唯一の入力。"""
+        rows = self._conn.execute(
+            "SELECT s.*, c.name AS company_name, c.industry, c.route, c.test_type "
+            "FROM steps s JOIN companies c ON c.id = s.company_id "
+            "ORDER BY c.name, s.sort_order, s.id"
+        ).fetchall()
+        return [self._to_view(row) for row in rows]
+
+
+class EsAnswerRepository(_Table):
+    table = "es_answers"
+    writable = frozenset({"company_id", "category", "question", "char_limit", "answer", "updated_at"})
+
+    _SELECT_WITH_COMPANY = (
+        "SELECT e.*, c.name AS company_name "
+        "FROM es_answers e LEFT JOIN companies c ON c.id = e.company_id"
+    )
+
+    @staticmethod
+    def _to_model(row: sqlite3.Row) -> EsAnswer:
+        return EsAnswer(
+            id=row["id"],
+            company_id=row["company_id"],
+            company_name=row["company_name"],
+            category=row["category"],
+            question=row["question"],
+            char_limit=row["char_limit"],
+            answer=row["answer"],
+            updated_at=row["updated_at"],
+        )
+
+    def add(self, answer: EsAnswer) -> int:
+        return self._insert(
+            {
+                "company_id": answer.company_id,
+                "category": answer.category,
+                "question": answer.question,
+                "char_limit": answer.char_limit,
+                "answer": answer.answer,
+            }
+        )
+
+    def update(self, answer_id: int, **fields: Any) -> None:
+        values = dict(fields)
+        values.setdefault("updated_at", self._today())
+        self._update(answer_id, values)
+
+    def get(self, answer_id: int) -> EsAnswer | None:
+        row = self._conn.execute(
+            f"{self._SELECT_WITH_COMPANY} WHERE e.id = ?", (answer_id,)
+        ).fetchone()
+        return None if row is None else self._to_model(row)
+
+    def list_all(self) -> list[EsAnswer]:
+        rows = self._conn.execute(
+            f"{self._SELECT_WITH_COMPANY} ORDER BY e.updated_at DESC, e.id DESC"
+        ).fetchall()
+        return [self._to_model(row) for row in rows]
+
+    def _today(self) -> str:
+        return self._conn.execute("SELECT date('now', 'localtime')").fetchone()[0]

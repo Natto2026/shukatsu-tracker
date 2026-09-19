@@ -1,6 +1,10 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "shukatsu-tracker"
-version = "0.3.0"
+version = "0.4.0"
 description = "就活の選考状況をローカルで一元管理・分析するツール"
 requires-python = ">=3.10"
 dependencies = [
@@ -13,6 +17,9 @@ dev = ["pytest>=8.0", "ruff>=0.6"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+shukatsu_tracker = ["db/migrations/*.sql"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

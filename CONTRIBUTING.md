@@ -20,8 +20,13 @@
 ## コーディング規約
 
 - ruff の設定(pyproject.toml)に従う。行長 110
+- **層を越えない**: app.py → services/ → db/ の一方向。UI から repositories を直接呼ばない
 - UI(app.py)にロジックを書かない。集計は analytics.py(純粋関数)へ
-- SQL は db.py のみに書き、必ずパラメータ化する
+- 層をまたぐ受け渡しは models.py の dataclass で行う。dict を持ち回さない
+- SQL は db/repositories.py と db/migrations/*.sql だけに書き、値は必ずパラメータ化する
+- 列名を動的に組み立てる場合は、リポジトリの `writable` に列挙した名前だけを通す
+- **スキーマ変更は新しい migration ファイルで行う**。適用済みの .sql は編集しない
+- 書き込みは services/ 側で `transaction()` に包む。repositories を裸で呼ばない
 - コメント・docstring・UI 文言は日本語
 - 文書にテスト件数などの数字をハードコードしない(CI ログを正とする)
 
