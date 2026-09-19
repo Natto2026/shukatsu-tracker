@@ -19,7 +19,9 @@ import streamlit as st
 
 from shukatsu_tracker import ai_export, analytics, constants, db, research
 from shukatsu_tracker.models import Company, EsAnswer
-from shukatsu_tracker.services import EsService, SelectionService
+from shukatsu_tracker.review import ReviewError
+from shukatsu_tracker.review.providers import available_providers
+from shukatsu_tracker.services import EsService, ReviewService, SelectionService
 
 # テストや複数プロファイルの切り替え用に環境変数で上書きできる
 DB_PATH = Path(os.environ.get("SHUKATSU_DB", Path(__file__).parent / "data" / "shukatsu.db"))
@@ -35,8 +37,11 @@ def get_conn(db_path: str):
 conn = get_conn(str(DB_PATH))
 selection = SelectionService(conn)
 es = EsService(conn)
+reviewer = ReviewService(conn)
 
-page = st.sidebar.radio("メニュー", ["ダッシュボード", "企業管理", "ES管理", "分析", "書き出し"])
+page = st.sidebar.radio(
+    "メニュー", ["ダッシュボード", "企業管理", "ES管理", "添削", "分析", "書き出し"]
+)
 st.sidebar.caption("データはローカルの data/shukatsu.db にのみ保存されます。")
 
 
@@ -259,6 +264,118 @@ elif page == "ES管理":
             if c2.button("削除", key=f"rm{answer.id}"):
                 es.delete(answer.id or -1)
                 st.rerun()
+
+
+# --- 添削 ----------------------------------------------------------------
+
+elif page == "添削":
+    st.title("回答への所見")
+    st.caption(
+        "保存した回答を、書き方の観点から点検します。観点は"
+        " shukatsu_tracker/review/criteria/ の TOML で定義していて、自由に足せます。"
+    )
+
+    answers = [a for a in es.answers() if a.answer.strip()]
+    if not answers:
+        st.info("本文の入った回答が保存されると点検できます。")
+        st.stop()
+
+    target = st.selectbox(
+        "対象の回答",
+        answers,
+        format_func=lambda a: f"[{a.category}] {a.question[:40]}（{a.company_name or '汎用'}）",
+    )
+
+    default_industry = reviewer.industry_of(target)
+    industry_options = ["指定なし", *constants.INDUSTRIES]
+    industry_index = (
+        industry_options.index(default_industry)
+        if default_industry in industry_options
+        else 0
+    )
+    c1, c2 = st.columns(2)
+    industry = c1.selectbox(
+        "観点を寄せる業界",
+        industry_options,
+        index=industry_index,
+        help="業界ごとに、読み手が気にしやすい観点を上乗せします。",
+    )
+    providers = available_providers()
+    provider = c2.selectbox(
+        "実行先",
+        providers,
+        format_func=lambda p: p.name,
+        help=(
+            "既定は書き出しのみで、外部とは通信しません。"
+            "Claude API は ANTHROPIC_API_KEY が設定されている場合だけ選べます。"
+        ),
+    )
+    note = st.text_input("補足（任意）", placeholder="例: 文字数を削る方向で見てほしい")
+
+    resolved_industry = None if industry == "指定なし" else industry
+    criteria = reviewer.criteria_for(resolved_industry)
+    check = es.length_check(target.answer, target.char_limit)
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("文字数", f"{check.length}" + (f" / {check.limit}" if check.limit else ""))
+    m2.metric("観点の数", f"{len(criteria)} 件")
+    m3.metric("特に重視", f"{sum(1 for c in criteria if c.weight >= 3)} 件")
+
+    with st.expander(f"適用される観点（{criteria.industry}）"):
+        st.caption(criteria.reader)
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {"観点": c.title, "重み": c.emphasis_label, "見るところ": c.check}
+                    for c in criteria
+                ]
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+
+    built_prompt = reviewer.build_prompt(target, industry=resolved_industry, note=note)
+    with st.expander("送られる文面（実行前に確認できます）"):
+        st.code(built_prompt, language="markdown")
+
+    if provider.sends_data_externally:
+        st.warning(
+            "この実行先を選ぶと、上の文面が外部に送信されます。"
+            "含めたくない記述がないか確認してください。"
+        )
+
+    if st.button("所見を取る", type="primary"):
+        try:
+            review = reviewer.run(
+                target, provider=provider, industry=resolved_industry, note=note
+            )
+        except ReviewError as error:
+            st.error(str(error))
+        else:
+            st.success(f"所見を保存しました（実行先: {review.provider}）")
+            st.rerun()
+
+    history = reviewer.history(target.id or -1)
+    if history:
+        st.subheader("履歴")
+        for review in history:
+            label = f"{review.created_at}  {review.provider}"
+            if review.model:
+                label += f"（{review.model}）"
+            if not review.applies_to(target.answer):
+                label += "  ※この所見のあとに本文が変わっています"
+            with st.expander(label):
+                st.markdown(review.result)
+                c1, c2 = st.columns([1, 5])
+                c2.download_button(
+                    "この所見を保存",
+                    review.result,
+                    file_name=f"review_{review.id}.md",
+                    key=f"dl_review_{review.id}",
+                )
+                if c1.button("削除", key=f"rm_review_{review.id}"):
+                    reviewer.delete(review.id or -1)
+                    st.rerun()
 
 
 # --- 分析 ----------------------------------------------------------------
