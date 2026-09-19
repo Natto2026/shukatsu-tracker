@@ -93,9 +93,7 @@ reviewer = ReviewService(database)
 page = st.sidebar.radio(
     "メニュー", ["ダッシュボード", "企業管理", "ES管理", "添削", "分析", "書き出し"]
 )
-st.sidebar.caption(f"保存先: {DB_TARGET}")
-if database.dialect.name != "sqlite":
-    st.sidebar.caption("サーバー型のデータベースに接続しています。")
+st.sidebar.caption(f"保存先: {db.describe(DB_TARGET, base=Path(__file__).parent)}")
 show_flash()
 
 

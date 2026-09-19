@@ -36,6 +36,8 @@
 
 保存した回答に対して、書き方の観点から点検の依頼文を組み立てます。
 
+![添削](docs/screenshots/review.png)
+
 観点は Python のコードではなく `src/shukatsu_tracker/review/criteria/` の TOML に
 書いてあり、編集すればアプリを変更せずに増やせます。共通の観点（設問への正対、
 前提情報、専門外への翻訳、困難・葛藤、字数の使い切りなど）に加えて、応募業界ごとの
@@ -103,6 +105,10 @@ SQL を書く場所は `db/repositories.py` の1ファイルに閉じてあり�
 - 画面は、利用者がボタンを押したときだけ書き込みます。開いただけで保存は走りません
 - 削除は確認を挟み、何が失われるかを明示します
 
+### 企業ごとの選考ステップ
+
+![企業管理](docs/screenshots/companies.png)
+
 ## セットアップ
 
 ```bash
@@ -119,6 +125,14 @@ streamlit run app.py
 ```powershell
 python scripts/demo_data.py
 $env:SHUKATSU_DB="data/demo.db"; streamlit run app.py
+```
+
+README のスクリーンショットは、このデモデータから自動で撮り直せます。
+画面を変えたときに、説明と画像がずれたままにならないようにするためです。
+
+```bash
+pip install playwright
+python scripts/capture_screenshots.py
 ```
 
 ## 設計
