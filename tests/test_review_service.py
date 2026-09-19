@@ -6,7 +6,7 @@ import pytest
 
 from shukatsu_tracker.models import Company, EsAnswer
 from shukatsu_tracker.review.providers import ReviewResult
-from shukatsu_tracker.services import EsService, ReviewService, SelectionService
+from shukatsu_tracker.services import EsService, SelectionService
 
 
 class StubProvider:
@@ -22,11 +22,6 @@ class StubProvider:
     def review(self, request, prompt):
         self.seen.append(prompt)
         return ReviewResult(provider=self.name, prompt=prompt, text=self.text, model=None)
-
-
-@pytest.fixture
-def reviewer(conn) -> ReviewService:
-    return ReviewService(conn)
 
 
 @pytest.fixture

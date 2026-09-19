@@ -6,13 +6,12 @@
 
 from __future__ import annotations
 
-import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
 
 from .. import analytics, constants
-from ..db import CompanyRepository, StepRepository, transaction
+from ..db import CompanyRepository, Database, StepRepository, transaction
 from ..models import Company, Deadline, FunnelRow, PassRate, Step, StepView
 
 
@@ -27,24 +26,39 @@ UNSET = _Unset()
 
 @dataclass(frozen=True, slots=True)
 class DashboardSummary:
-    """ダッシュボードが必要とする数字を1回の集計でまとめて返す。"""
+    """ダッシュボードが必要とするものを1回の問い合わせでまとめて返す。
 
-    total_companies: int
+    企業一覧とステップも持たせているのは、画面側が同じ問い合わせを
+    もう一度出さずに済むようにするため。
+    """
+
+    companies: list[Company]
+    steps_by_company: dict[int, list[StepView]]
     active_companies: int
     deadlines: list[Deadline]
 
     @property
+    def total_companies(self) -> int:
+        return len(self.companies)
+
+    @property
     def overdue(self) -> list[Deadline]:
+        """期限を過ぎたもの。"""
         return [deadline for deadline in self.deadlines if deadline.overdue]
+
+    @property
+    def upcoming(self) -> list[Deadline]:
+        """これから期限を迎えるもの。期限超過は含めない。"""
+        return [deadline for deadline in self.deadlines if not deadline.overdue]
 
 
 class SelectionService:
     """企業と選考ステップの操作。"""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
-        self._conn = conn
-        self._companies = CompanyRepository(conn)
-        self._steps = StepRepository(conn)
+    def __init__(self, db: Database) -> None:
+        self._db = db
+        self._companies = CompanyRepository(db)
+        self._steps = StepRepository(db)
 
     # --- 企業 ---------------------------------------------------------
 
@@ -63,7 +77,7 @@ class SelectionService:
         name = company.name.strip()
         if not name:
             raise ValueError("企業名は必須です")
-        with transaction(self._conn):
+        with transaction(self._db):
             company_id = self._companies.add(
                 Company(
                     name=name,
@@ -86,12 +100,12 @@ class SelectionService:
         return company_id
 
     def update_company(self, company_id: int, **fields: object) -> None:
-        with transaction(self._conn):
+        with transaction(self._db):
             self._companies.update(company_id, **fields)
 
     def delete_company(self, company_id: int) -> None:
         """企業を削除する。ステップは連動削除、ES 回答は残る（スキーマの制約）。"""
-        with transaction(self._conn):
+        with transaction(self._db):
             self._companies.delete(company_id)
 
     # --- 選考ステップ -------------------------------------------------
@@ -114,7 +128,7 @@ class SelectionService:
         if not label:
             raise ValueError("ステップ名は必須です")
         existing = self._steps.list_for_company(company_id)
-        with transaction(self._conn):
+        with transaction(self._db):
             return self._steps.add(
                 Step(
                     company_id=company_id,
@@ -145,11 +159,11 @@ class SelectionService:
             fields["result"] = result
         if not fields:
             return
-        with transaction(self._conn):
+        with transaction(self._db):
             self._steps.update(step_id, **fields)
 
     def delete_step(self, step_id: int) -> None:
-        with transaction(self._conn):
+        with transaction(self._db):
             self._steps.delete(step_id)
 
     # --- 集計 ---------------------------------------------------------
@@ -158,6 +172,7 @@ class SelectionService:
         return analytics.company_status(self.steps_by_company().get(company_id, []))
 
     def dashboard(self, today: date, *, within_days: int = 7) -> DashboardSummary:
+        """画面1枚ぶんの情報を、テーブルごとに1回ずつの問い合わせで集める。"""
         grouped = self.steps_by_company()
         companies = self._companies.list_all()
         active = sum(
@@ -165,7 +180,8 @@ class SelectionService:
         )
         all_steps = [step for steps in grouped.values() for step in steps]
         return DashboardSummary(
-            total_companies=len(companies),
+            companies=companies,
+            steps_by_company=grouped,
             active_companies=active,
             deadlines=analytics.upcoming_deadlines(all_steps, today, within_days=within_days),
         )

@@ -3,15 +3,19 @@
 値は必ずプレースホルダで渡す。列名はプレースホルダに置けないため、更新できる列を
 リポジトリごとの writable に列挙し、それ以外は ValueError にする
 （呼び出し側の打ち間違いが SQL に混ざらないようにするため）。
+
+接続そのものではなく Database を受け取る。方言差とドライバ固有の例外は
+Database が吸収するので、この層の SQL は1組で両方の DBMS に通る。
 """
 
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 from ..models import Company, EsAnswer, Review, Step, StepView
+from .database import Database
+from .dialects import TODAY
 
 # 志望度は文字列順だと S が末尾に来るため、意味の順（S→A→B→C）を明示する
 _PRIORITY_ORDER = (
@@ -26,8 +30,8 @@ class _Table:
     table: str
     writable: frozenset[str]
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
-        self._conn = conn
+    def __init__(self, db: Database) -> None:
+        self._db = db
 
     def _checked(self, fields: Mapping[str, Any]) -> dict[str, Any]:
         unknown = set(fields) - self.writable
@@ -40,26 +44,16 @@ class _Table:
         if not values:
             return
         assignments = ", ".join(f"{column} = ?" for column in values)
-        self._conn.execute(
+        self._db.execute(
             f"UPDATE {self.table} SET {assignments} WHERE id = ?",
             [*values.values(), row_id],
         )
 
     def _insert(self, fields: Mapping[str, Any]) -> int:
-        values = self._checked(fields)
-        columns = ", ".join(values)
-        placeholders = ", ".join("?" * len(values))
-        cursor = self._conn.execute(
-            f"INSERT INTO {self.table} ({columns}) VALUES ({placeholders})",
-            list(values.values()),
-        )
-        inserted = cursor.lastrowid
-        if inserted is None:
-            raise RuntimeError(f"{self.table} への INSERT で id を取得できませんでした")
-        return inserted
+        return self._db.insert(self.table, self._checked(fields))
 
     def delete(self, row_id: int) -> None:
-        self._conn.execute(f"DELETE FROM {self.table} WHERE id = ?", (row_id,))
+        self._db.execute(f"DELETE FROM {self.table} WHERE id = ?", (row_id,))
 
 
 class CompanyRepository(_Table):
@@ -78,7 +72,7 @@ class CompanyRepository(_Table):
     )
 
     @staticmethod
-    def _to_model(row: sqlite3.Row) -> Company:
+    def _to_model(row: Any) -> Company:
         return Company(
             id=row["id"],
             name=row["name"],
@@ -110,13 +104,11 @@ class CompanyRepository(_Table):
         self._update(company_id, fields)
 
     def get(self, company_id: int) -> Company | None:
-        row = self._conn.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone()
+        row = self._db.fetchone("SELECT * FROM companies WHERE id = ?", (company_id,))
         return None if row is None else self._to_model(row)
 
     def list_all(self) -> list[Company]:
-        rows = self._conn.execute(
-            f"SELECT * FROM companies ORDER BY {_PRIORITY_ORDER}, name"
-        ).fetchall()
+        rows = self._db.fetchall(f"SELECT * FROM companies ORDER BY {_PRIORITY_ORDER}, name")
         return [self._to_model(row) for row in rows]
 
 
@@ -125,7 +117,7 @@ class StepRepository(_Table):
     writable = frozenset({"company_id", "name", "deadline", "result", "memo", "sort_order"})
 
     @staticmethod
-    def _to_model(row: sqlite3.Row) -> Step:
+    def _to_model(row: Any) -> Step:
         return Step(
             id=row["id"],
             company_id=row["company_id"],
@@ -137,7 +129,7 @@ class StepRepository(_Table):
         )
 
     @staticmethod
-    def _to_view(row: sqlite3.Row) -> StepView:
+    def _to_view(row: Any) -> StepView:
         return StepView(
             id=row["id"],
             company_id=row["company_id"],
@@ -170,26 +162,32 @@ class StepRepository(_Table):
     def update(self, step_id: int, **fields: Any) -> None:
         self._update(step_id, fields)
 
+    def get(self, step_id: int) -> Step | None:
+        row = self._db.fetchone("SELECT * FROM steps WHERE id = ?", (step_id,))
+        return None if row is None else self._to_model(row)
+
     def list_for_company(self, company_id: int) -> list[Step]:
-        rows = self._conn.execute(
+        rows = self._db.fetchall(
             "SELECT * FROM steps WHERE company_id = ? ORDER BY sort_order, id",
             (company_id,),
-        ).fetchall()
+        )
         return [self._to_model(row) for row in rows]
 
     def list_views(self) -> list[StepView]:
         """全ステップに企業情報を結合して返す。集計の唯一の入力。"""
-        rows = self._conn.execute(
+        rows = self._db.fetchall(
             "SELECT s.*, c.name AS company_name, c.industry, c.route, c.test_type "
             "FROM steps s JOIN companies c ON c.id = s.company_id "
             "ORDER BY c.name, s.sort_order, s.id"
-        ).fetchall()
+        )
         return [self._to_view(row) for row in rows]
 
 
 class EsAnswerRepository(_Table):
     table = "es_answers"
-    writable = frozenset({"company_id", "category", "question", "char_limit", "answer", "updated_at"})
+    writable = frozenset(
+        {"company_id", "category", "question", "char_limit", "answer", "updated_at"}
+    )
 
     _SELECT_WITH_COMPANY = (
         "SELECT e.*, c.name AS company_name "
@@ -197,7 +195,7 @@ class EsAnswerRepository(_Table):
     )
 
     @staticmethod
-    def _to_model(row: sqlite3.Row) -> EsAnswer:
+    def _to_model(row: Any) -> EsAnswer:
         return EsAnswer(
             id=row["id"],
             company_id=row["company_id"],
@@ -226,19 +224,19 @@ class EsAnswerRepository(_Table):
         self._update(answer_id, values)
 
     def get(self, answer_id: int) -> EsAnswer | None:
-        row = self._conn.execute(
-            f"{self._SELECT_WITH_COMPANY} WHERE e.id = ?", (answer_id,)
-        ).fetchone()
+        row = self._db.fetchone(f"{self._SELECT_WITH_COMPANY} WHERE e.id = ?", (answer_id,))
         return None if row is None else self._to_model(row)
 
     def list_all(self) -> list[EsAnswer]:
-        rows = self._conn.execute(
+        rows = self._db.fetchall(
             f"{self._SELECT_WITH_COMPANY} ORDER BY e.updated_at DESC, e.id DESC"
-        ).fetchall()
+        )
         return [self._to_model(row) for row in rows]
 
     def _today(self) -> str:
-        return self._conn.execute("SELECT date('now', 'localtime')").fetchone()[0]
+        expression = self._db.dialect.substitutions()[TODAY]
+        row = self._db.fetchone(f"SELECT {expression} AS today")
+        return str(row["today"])
 
 
 class ReviewRepository(_Table):
@@ -256,7 +254,7 @@ class ReviewRepository(_Table):
     )
 
     @staticmethod
-    def _to_model(row: sqlite3.Row) -> Review:
+    def _to_model(row: Any) -> Review:
         return Review(
             id=row["id"],
             es_answer_id=row["es_answer_id"],
@@ -283,17 +281,15 @@ class ReviewRepository(_Table):
         )
 
     def get(self, review_id: int) -> Review | None:
-        row = self._conn.execute(
-            "SELECT * FROM reviews WHERE id = ?", (review_id,)
-        ).fetchone()
+        row = self._db.fetchone("SELECT * FROM reviews WHERE id = ?", (review_id,))
         return None if row is None else self._to_model(row)
 
     def list_for_answer(self, es_answer_id: int) -> list[Review]:
         """新しいものから順に返す。"""
-        rows = self._conn.execute(
+        rows = self._db.fetchall(
             "SELECT * FROM reviews WHERE es_answer_id = ? ORDER BY id DESC",
             (es_answer_id,),
-        ).fetchall()
+        )
         return [self._to_model(row) for row in rows]
 
     def latest_for_answer(self, es_answer_id: int) -> Review | None:
