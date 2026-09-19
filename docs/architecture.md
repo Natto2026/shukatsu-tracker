@@ -4,17 +4,26 @@
 
 ```
 shukatsu-tracker/
-├── app.py                    # Streamlit UI(画面の組み立てのみ。ロジックは持たない)
+├── app.py                        # Streamlit UI（画面の組み立てのみ。ロジックは持たない）
 ├── src/
 │   └── shukatsu_tracker/
-│       ├── constants.py      # 選択肢の定義(応募経路・選考ステップ等)
-│       ├── db.py             # SQLite 読み書き(唯一 DB に触る層)
-│       ├── analytics.py      # 集計ロジック(DB 非依存の純粋関数)
-│       ├── research.py       # 企業研究リンク生成(通信しない。URL 組み立てのみ)
-│       └── ai_export.py      # AI 分析用 Markdown 書き出し(通信しない)
-├── scripts/demo_data.py      # デモデータ生成(架空企業)
-├── tests/                    # 単体テスト + AppTest 画面スモークテスト
-└── docs/                     # 設計文書(このフォルダ)
+│       ├── models.py             # 層をまたいで受け渡す型（dataclass）
+│       ├── constants.py          # 選択肢の定義（応募経路・選考ステップ等）
+│       ├── analytics.py          # 集計ロジック（DB 非依存の純粋関数）
+│       ├── research.py           # 企業研究リンク生成（通信しない。URL 組み立てのみ）
+│       ├── ai_export.py          # 分析用 Markdown 書き出し（通信しない）
+│       ├── db/                   # 永続化層
+│       │   ├── connection.py     # 接続（この層だけが接続を作る）
+│       │   ├── transactions.py   # トランザクション境界
+│       │   ├── migrations.py     # スキーマのバージョン適用
+│       │   ├── migrations/*.sql  # スキーマ本体（連番。追記のみ）
+│       │   └── repositories.py   # テーブルごとの読み書き（SQL を書く唯一の場所）
+│       └── services/             # ユースケース層（UI が呼ぶ入口）
+│           ├── selection.py      # 企業・選考ステップの操作と集計の取りまとめ
+│           └── es.py             # 設問・回答の保存と検索
+├── scripts/demo_data.py          # デモデータ生成（架空企業）
+├── tests/                        # 層ごとの単体テスト + AppTest 画面スモークテスト
+└── docs/                         # 設計文書（このフォルダ）
 ```
 
 src レイアウト採用の理由: 「インストールされたパッケージ」と「リポジトリ直下の雑多なファイル」を
@@ -23,36 +32,70 @@ src レイアウト採用の理由: 「インストールされたパッケー�
 ## レイヤー設計
 
 ```mermaid
-flowchart LR
-    UI["app.py<br>(Streamlit UI)"] --> DB["db.py<br>(SQLite 読み書き)"]
-    UI --> AN["analytics.py<br>(集計・純粋関数)"]
-    UI --> RS["research.py<br>(リンク生成)"]
-    UI --> EX["ai_export.py<br>(Markdown 書き出し)"]
-    DB --> SQL[("data/shukatsu.db<br>ローカル SQLite")]
-    AN -.->|"list[dict] を受け取るだけ"| DB
+flowchart TB
+    UI["app.py<br>(Streamlit UI)"]
+    subgraph services["services/（ユースケース層）"]
+        SEL["selection.py"]
+        ES["es.py"]
+    end
+    subgraph db["db/（永続化層）"]
+        REPO["repositories.py"]
+        TX["transactions.py"]
+        MIG["migrations.py + *.sql"]
+    end
+    AN["analytics.py<br>(集計・純粋関数)"]
+    EX["ai_export.py<br>(Markdown 書き出し)"]
+    MD["models.py<br>(共通の型)"]
+    SQL[("data/shukatsu.db<br>ローカル SQLite")]
+
+    UI --> SEL
+    UI --> ES
+    UI --> EX
+    SEL --> AN
+    SEL --> REPO
+    ES --> REPO
+    REPO --> TX
+    TX --> SQL
+    MIG --> SQL
     EX --> AN
+    MD -.->|全層が参照する語彙| services
 ```
 
-- **UI とロジックの分離** — `app.py` は表示と入力の受け付けだけを行い、計算はすべて
-  `shukatsu_tracker/` 側に置く。画面を変えてもロジックのテストが壊れない
-- **analytics は純粋関数** — DB コネクションを受け取らず、`db.list_steps()` が返す
-  `list[dict]` だけを入力にする。テストがデータ組み立てだけで書ける
-- **DB に触るのは db.py だけ** — SQL が散らばらない。スキーマ変更時の影響範囲が一目で分かる
+上の層は下の層だけを呼ぶ。逆向きの依存はない。
+
+| 層 | 責務 | してはいけないこと |
+|---|---|---|
+| `app.py` | 入力を受け取り、サービスを呼び、結果を並べる | 集計・SQL を書く |
+| `services/` | 業務ルール（既定ステップの一括登録、入力の検証、トランザクションの単位） | SQL を書く、Streamlit に触る |
+| `db/repositories.py` | テーブルごとの読み書き、行とモデルの変換 | 業務ルールを持つ |
+| `analytics.py` | 集計。入力は `StepView` の列だけ | DB・UI に触れる |
 
 ## 設計原則
 
 1. **ローカル完結** — データは `data/*.db` のみ。外部送信ゼロ。サーバーは 127.0.0.1 バインド
 2. **認証情報を持たない** — パスワードは保存しない。マイページ URL・ログイン用メールは
-   保存するが AI 書き出しには含めない(回帰テストで保証)
-3. **AI とはファイルで会話する** — アプリは AI と通信せず、分析用 Markdown を書き出すだけ。
-   何を AI に渡すかの判断をユーザーの手に残す
+   保存するが書き出しには含めない（回帰テストで保証）
+3. **外部とはファイルで受け渡す** — アプリは通信せず Markdown を書き出すだけ。
+   何をどこまで渡すかの判断を利用者の手に残す
 4. **数字を文書にハードコードしない** — テスト件数などは CI ログを正とする
-   (文書内の数字はすぐ古くなるため)
 5. **個人データをリポジトリに入れない** — `data/` は .gitignore。スクリーンショットも
    架空企業のデモデータで撮る
+
+## 永続化の方針
+
+- **スキーマは SQL ファイルで管理する。** `db/migrations/NNN_name.sql` を追加すると、
+  次回の接続時に未適用のものだけが順に流れ、`schema_migrations` テーブルに記録される。
+  既存の DB を作り直さずに列やテーブルを足せる。適用済みのファイルは変更しない（追記のみ）。
+- **トランザクションは明示的に開く。** sqlite3 の既定は DDL を暗黙コミットしてしまい
+  「まとめて成功するか、まとめて失敗するか」を保証できないため、接続時に自動
+  トランザクションを切り、`transactions.transaction()` だけが BEGIN / COMMIT を発行する。
+- **更新できる列は列挙する。** 列名はプレースホルダに置けないため、リポジトリごとに
+  `writable` を持ち、そこにない列が渡されたら SQL に届く前に `ValueError` にする。
+- **DB を差し替える場合の入口は1か所。** SQL は `repositories.py` にしかないため、
+  別の DBMS に移す場合もこのファイルと接続処理だけが対象になる。
 
 ## 開発フロー
 
 Issue 起点 → `feature/xxx` または `fix/xxx` ブランチ → ruff + pytest をローカルで通す →
-Pull Request(CI: lint + test 3.11/3.13)→ マージ → ブランチ削除。
+Pull Request（CI: lint + test 3.11/3.13）→ マージ → ブランチ削除。
 節目で CHANGELOG を更新し、セマンティックバージョニングでタグ+リリースを切る。
