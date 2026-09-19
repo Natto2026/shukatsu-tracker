@@ -1,15 +1,20 @@
 """shukatsu-tracker の Streamlit UI。
 
 起動: streamlit run app.py
-データはローカルの data/shukatsu.db にのみ保存される。
+保存先は既定でローカルの data/shukatsu.db。SHUKATSU_DB で切り替えられる。
 
 この層は「入力を受け取り、サービスを呼び、結果を並べる」ことだけを行う。
 集計も SQL もここには書かない（shukatsu_tracker/services 以下にある）。
+
+書き込みは、利用者が明示的にボタンを押したときだけ行う。画面を開いた
+だけで保存が走る作りにすると、別のタブや別の端末で更新した内容を、
+古い表示のまま上書きしてしまうため。
 """
 
 from __future__ import annotations
 
 import os
+import re
 from datetime import date
 from pathlib import Path
 
@@ -18,31 +23,78 @@ import pandas as pd
 import streamlit as st
 
 from shukatsu_tracker import ai_export, analytics, constants, db, research
+from shukatsu_tracker.db import DatabaseError, DuplicateKeyError
 from shukatsu_tracker.models import Company, EsAnswer
 from shukatsu_tracker.review import ReviewError
 from shukatsu_tracker.review.providers import available_providers
 from shukatsu_tracker.services import EsService, ReviewService, SelectionService
 
-# テストや複数プロファイルの切り替え用に環境変数で上書きできる
-DB_PATH = Path(os.environ.get("SHUKATSU_DB", Path(__file__).parent / "data" / "shukatsu.db"))
+DEFAULT_DB = Path(__file__).parent / "data" / "shukatsu.db"
+DB_TARGET = os.environ.get("SHUKATSU_DB", str(DEFAULT_DB))
 
 st.set_page_config(page_title="shukatsu-tracker", layout="wide")
 
-
-@st.cache_resource
-def get_conn(db_path: str):
-    return db.connect(db_path)
+_MARKDOWN_SPECIALS = re.compile(r"([\\`*_{}\[\]()#+\-.!|>~])")
 
 
-conn = get_conn(str(DB_PATH))
-selection = SelectionService(conn)
-es = EsService(conn)
-reviewer = ReviewService(conn)
+def as_text(value: str | None) -> str:
+    """利用者が入れた文字列を、Markdown として解釈されない形にする。"""
+    return "" if not value else _MARKDOWN_SPECIALS.sub(r"\\\1", value)
+
+
+def get_db():
+    """接続をブラウザのセッションごとに1つ持つ。
+
+    全セッションで1つの接続を共有すると、あるセッションの失敗が別の
+    セッションの確定済みの書き込みを巻き戻すため。
+    """
+    if "db" not in st.session_state:
+        st.session_state.db = db.connect(DB_TARGET)
+    return st.session_state.db
+
+
+def flash(message: str, kind: str = "success") -> None:
+    """再描画をまたいで残る通知を積む。"""
+    st.session_state.setdefault("flash", []).append((kind, message))
+
+
+def show_flash() -> None:
+    for kind, message in st.session_state.pop("flash", []):
+        getattr(st, kind)(message)
+
+
+def run_write(action, success: str | None = None) -> bool:
+    """書き込みを実行し、失敗したら利用者に伝わる文面にして返す。"""
+    try:
+        action()
+    except DuplicateKeyError:
+        st.error("同じ名前がすでに登録されています。別の名前にしてください。")
+    except DatabaseError as error:
+        st.error(f"保存できませんでした: {error}")
+    except ValueError as error:
+        st.error(str(error))
+    else:
+        if success:
+            flash(success)
+        return True
+    return False
+
+
+try:
+    database = get_db()
+except DatabaseError as error:
+    st.error(f"データベースに接続できませんでした: {error}")
+    st.stop()
+
+selection = SelectionService(database)
+es = EsService(database)
+reviewer = ReviewService(database)
 
 page = st.sidebar.radio(
     "メニュー", ["ダッシュボード", "企業管理", "ES管理", "添削", "分析", "書き出し"]
 )
-st.sidebar.caption("データはローカルの data/shukatsu.db にのみ保存されます。")
+st.sidebar.caption(f"保存先: {db.describe(DB_TARGET, base=Path(__file__).parent)}")
+show_flash()
 
 
 # --- ダッシュボード ------------------------------------------------------
@@ -50,31 +102,36 @@ st.sidebar.caption("データはローカルの data/shukatsu.db にのみ保存
 if page == "ダッシュボード":
     st.title("ダッシュボード")
     summary = selection.dashboard(date.today())
-    companies = selection.companies()
-    grouped = selection.steps_by_company()
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("エントリー企業", f"{summary.total_companies} 社")
     col2.metric("選考継続中", f"{summary.active_companies} 社")
-    col3.metric("7日以内の締切", f"{len(summary.deadlines)} 件")
+    col3.metric("7日以内の締切", f"{len(summary.upcoming)} 件")
     col4.metric("期限超過", f"{len(summary.overdue)} 件")
 
-    st.subheader("直近の締切（7日以内）")
-    if summary.deadlines:
-        for deadline in summary.deadlines:
+    if summary.overdue:
+        st.subheader("期限超過")
+        for deadline in summary.overdue:
             step = deadline.step
-            label = f"**{step.company_name}** — {step.name}（締切 {step.deadline}）"
-            if deadline.overdue:
-                st.error(f"{label} : {-deadline.days_left}日超過")
-            elif deadline.days_left <= 1:
-                st.warning(f"{label} : あと{deadline.days_left}日")
-            else:
-                st.info(f"{label} : あと{deadline.days_left}日")
+            st.error(
+                f"**{as_text(step.company_name)}** — {as_text(step.name)}"
+                f"（締切 {step.deadline}）: {-deadline.days_left}日超過"
+            )
+
+    st.subheader("直近の締切（7日以内）")
+    if summary.upcoming:
+        for deadline in summary.upcoming:
+            step = deadline.step
+            label = (
+                f"**{as_text(step.company_name)}** — {as_text(step.name)}"
+                f"（締切 {step.deadline}）: あと{deadline.days_left}日"
+            )
+            (st.warning if deadline.days_left <= 1 else st.info)(label)
     else:
         st.success("7日以内の締切はありません。")
 
     st.subheader("選考状況一覧")
-    if companies:
+    if summary.companies:
         rows = [
             {
                 "企業名": company.name,
@@ -82,9 +139,11 @@ if page == "ダッシュボード":
                 "業界": company.industry,
                 "応募経路": company.route,
                 "適性検査": company.test_type,
-                "現在の状況": analytics.company_status(grouped.get(company.id or -1, [])),
+                "現在の状況": analytics.company_status(
+                    summary.steps_by_company.get(company.id or -1, [])
+                ),
             }
-            for company in companies
+            for company in summary.companies
         ]
         st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
     else:
@@ -106,27 +165,33 @@ elif page == "企業管理":
         priority = c2.selectbox("志望度", constants.PRIORITIES, index=1)
         route = c3.selectbox("応募経路", constants.ROUTES)
         c4, c5 = st.columns(2)
-        test_type = c4.selectbox("適性検査", constants.TEST_TYPES, index=len(constants.TEST_TYPES) - 1)
+        test_type = c4.selectbox(
+            "適性検査", constants.TEST_TYPES, index=len(constants.TEST_TYPES) - 1
+        )
         login_email = c5.text_input("マイページ登録メール")
         mypage_url = st.text_input("マイページURL")
         memo = st.text_area("メモ", height=68)
         add_default = st.checkbox("標準の選考ステップ（ES〜最終面接）をまとめて登録する", value=True)
-        if st.form_submit_button("追加") and name.strip():
-            selection.add_company(
-                Company(
-                    name=name,
-                    industry=industry,
-                    priority=priority,
-                    route=route,
-                    test_type=test_type,
-                    mypage_url=mypage_url,
-                    login_email=login_email,
-                    memo=memo,
+        if st.form_submit_button("追加"):
+            if not name.strip():
+                st.error("企業名を入力してください。")
+            elif run_write(
+                lambda: selection.add_company(
+                    Company(
+                        name=name,
+                        industry=industry,
+                        priority=priority,
+                        route=route,
+                        test_type=test_type,
+                        mypage_url=mypage_url,
+                        login_email=login_email,
+                        memo=memo,
+                    ),
+                    with_default_steps=add_default,
                 ),
-                with_default_steps=add_default,
-            )
-            st.success(f"「{name}」を追加しました。")
-            st.rerun()
+                success=f"「{name.strip()}」を追加しました。",
+            ):
+                st.rerun()
 
     if not companies:
         st.stop()
@@ -135,72 +200,169 @@ elif page == "企業管理":
         "企業を選択", companies, format_func=lambda c: f"{c.name}（{c.priority}）"
     )
     company_id = selected.id or -1
-    steps = selection.steps_of(company_id)
-    status = analytics.company_status(selection.steps_by_company().get(company_id, []))
-    st.markdown(f"### {selected.name} — {status}")
+    # 一覧と状況の両方をこの1回の問い合わせで賄う
+    steps = selection.steps_by_company().get(company_id, [])
+    status = analytics.company_status(steps)
+    st.markdown(f"### {as_text(selected.name)} — {status}")
+
     if selected.mypage_url:
-        email = selected.login_email or "未設定"
-        st.markdown(f"[マイページを開く]({selected.mypage_url}) （登録メール: {email}）")
+        if selected.mypage_url.startswith(("http://", "https://")):
+            st.link_button("マイページを開く", selected.mypage_url)
+        else:
+            st.caption(f"マイページURL: {as_text(selected.mypage_url)}")
+        st.caption(f"登録メール: {as_text(selected.login_email) or '未設定'}")
     if selected.memo:
-        st.caption(selected.memo)
+        st.caption(as_text(selected.memo))
 
     with st.expander("企業研究リンク（公式・事業内容・クチコミ・選考体験記）"):
         links = research.research_links(selected.name)
         st.markdown(" / ".join(f"[{link['label']}]({link['url']})" for link in links))
 
     st.markdown("#### 選考ステップ")
-    for step in steps:
-        c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
-        c1.write(f"**{step.name}**")
-        new_deadline = c2.date_input(
-            "締切",
-            value=analytics.parse_date(step.deadline),
-            key=f"dl{step.id}",
-            format="YYYY-MM-DD",
-            label_visibility="collapsed",
+    st.caption("変更したら「選考ステップを保存」を押してください。押すまで保存されません。")
+
+    unreadable = [s for s in steps if s.deadline and analytics.parse_date(s.deadline) is None]
+    if unreadable:
+        names = "、".join(as_text(s.name) for s in unreadable)
+        st.warning(
+            f"締切の書式を読み取れないステップがあります（{names}）。"
+            "日付を選び直すまで、その値はそのまま保存されます。"
         )
-        new_result = c3.selectbox(
-            "結果",
-            constants.STEP_RESULTS,
-            index=constants.STEP_RESULTS.index(step.result),
-            key=f"rs{step.id}",
-            label_visibility="collapsed",
-        )
-        if c4.button("削除", key=f"del{step.id}"):
-            selection.delete_step(step.id or -1)
-            st.rerun()
-        deadline_text = new_deadline.isoformat() if new_deadline else None
-        if deadline_text != step.deadline or new_result != step.result:
-            selection.update_step(step.id or -1, deadline=deadline_text, result=new_result)
+
+    with st.form("edit_steps"):
+        edited: list[tuple[int, date | None, str, str | None, str]] = []
+        for step in steps:
+            rendered_deadline = analytics.parse_date(step.deadline)
+            # DB の値をキーに含める。別のタブや端末で更新されたとき、
+            # 古い入力欄の値が残って上書きするのを防ぐため。
+            token = f"{step.id}:{step.deadline}:{step.result}"
+            c1, c2, c3 = st.columns([3, 2, 2])
+            c1.write(f"**{as_text(step.name)}**")
+            new_deadline = c2.date_input(
+                "締切",
+                value=rendered_deadline,
+                key=f"dl:{token}",
+                format="YYYY-MM-DD",
+                label_visibility="collapsed",
+            )
+            new_result = c3.selectbox(
+                "結果",
+                constants.STEP_RESULTS,
+                index=constants.STEP_RESULTS.index(step.result),
+                key=f"rs:{token}",
+                label_visibility="collapsed",
+            )
+            edited.append(
+                (step.id or -1, new_deadline, new_result, step.deadline, step.result)
+            )
+
+        if st.form_submit_button("選考ステップを保存", type="primary"):
+            current = {s.id: s for s in selection.steps_of(company_id)}
+            changed = 0
+            conflicted = 0
+            for step_id, new_deadline, new_result, old_deadline, old_result in edited:
+                latest = current.get(step_id)
+                if latest is None:
+                    continue
+                if latest.deadline != old_deadline or latest.result != old_result:
+                    conflicted += 1
+                    continue
+                fields: dict[str, object] = {}
+                rendered = analytics.parse_date(old_deadline)
+                # 表示していた値と違うものだけを書く。読めない締切に
+                # 触っていない場合は、空欄に見えていても書き換えない。
+                if new_deadline != rendered:
+                    fields["deadline"] = (
+                        new_deadline.isoformat() if new_deadline else None
+                    )
+                if new_result != old_result:
+                    fields["result"] = new_result
+                if fields:
+                    selection.update_step(step_id, **fields)  # type: ignore[arg-type]
+                    changed += 1
+            if conflicted:
+                flash(
+                    f"{conflicted} 件は表示後に別の場所で更新されていたため保存しませんでした。"
+                    "最新の内容を読み込みました。",
+                    "warning",
+                )
+            flash(f"{changed} 件を保存しました。" if changed else "変更はありませんでした。", "info")
             st.rerun()
 
     with st.form("add_step", clear_on_submit=True):
         c1, c2 = st.columns([3, 1])
         step_name = c1.text_input("ステップを追加（例: 3次面接、リクルーター面談）")
-        if c2.form_submit_button("追加") and step_name.strip():
-            selection.add_step(company_id, step_name)
-            st.rerun()
-
-    with st.expander("企業情報の編集・削除"):
-        with st.form("edit_company"):
-            c1, c2, c3 = st.columns(3)
-            e_priority = c1.selectbox(
-                "志望度", constants.PRIORITIES, index=constants.PRIORITIES.index(selected.priority)
-            )
-            e_route = c2.selectbox(
-                "応募経路", constants.ROUTES, index=constants.ROUTES.index(selected.route)
-            )
-            e_test = c3.selectbox(
-                "適性検査", constants.TEST_TYPES, index=constants.TEST_TYPES.index(selected.test_type)
-            )
-            e_memo = st.text_area("メモ", value=selected.memo, height=68)
-            if st.form_submit_button("更新"):
-                selection.update_company(
-                    company_id, priority=e_priority, route=e_route, test_type=e_test, memo=e_memo
-                )
+        if c2.form_submit_button("追加"):
+            if not step_name.strip():
+                st.error("ステップ名を入力してください。")
+            elif run_write(
+                lambda: selection.add_step(company_id, step_name),
+                success=f"「{step_name.strip()}」を追加しました。",
+            ):
                 st.rerun()
-        if st.button(f"「{selected.name}」を削除する", type="secondary"):
-            selection.delete_company(company_id)
+
+    with st.expander("不要なステップを削除"):
+        for step in steps:
+            c1, c2 = st.columns([4, 1])
+            c1.write(as_text(step.name))
+            if c2.button("削除", key=f"delstep{step.id}") and run_write(
+                lambda sid=step.id: selection.delete_step(sid or -1),
+                success="ステップを削除しました。",
+            ):
+                st.rerun()
+
+    with st.expander("企業情報の編集"), st.form("edit_company"):
+        e_name = st.text_input("企業名", value=selected.name)
+        c1, c2, c3 = st.columns(3)
+        e_industry = c1.selectbox(
+            "業界", constants.INDUSTRIES, index=constants.INDUSTRIES.index(selected.industry)
+        )
+        e_priority = c2.selectbox(
+            "志望度", constants.PRIORITIES, index=constants.PRIORITIES.index(selected.priority)
+        )
+        e_route = c3.selectbox(
+            "応募経路", constants.ROUTES, index=constants.ROUTES.index(selected.route)
+        )
+        c4, c5 = st.columns(2)
+        e_test = c4.selectbox(
+            "適性検査",
+            constants.TEST_TYPES,
+            index=constants.TEST_TYPES.index(selected.test_type),
+        )
+        e_email = c5.text_input("マイページ登録メール", value=selected.login_email)
+        e_url = st.text_input("マイページURL", value=selected.mypage_url)
+        e_memo = st.text_area("メモ", value=selected.memo, height=68)
+        if st.form_submit_button("更新"):
+            if not e_name.strip():
+                st.error("企業名を入力してください。")
+            elif run_write(
+                lambda: selection.update_company(
+                    company_id,
+                    name=e_name.strip(),
+                    industry=e_industry,
+                    priority=e_priority,
+                    route=e_route,
+                    test_type=e_test,
+                    login_email=e_email,
+                    mypage_url=e_url,
+                    memo=e_memo,
+                ),
+                success="企業情報を更新しました。",
+            ):
+                st.rerun()
+
+    with st.expander("企業を削除"):
+        st.warning(
+            "削除すると、この企業の選考ステップもすべて消えます。"
+            "保存した回答は残りますが、企業との結びつきは失われます。元に戻せません。"
+        )
+        confirmed = st.checkbox(
+            f"「{selected.name}」を削除することを理解しました", key=f"confirm_del{company_id}"
+        )
+        if st.button("削除する", disabled=not confirmed, type="secondary") and run_write(
+            lambda: selection.delete_company(company_id),
+            success=f"「{selected.name}」を削除しました。",
+        ):
             st.rerun()
 
 
@@ -221,33 +383,52 @@ elif page == "ES管理":
         char_limit = c3.number_input("文字数制限", min_value=0, value=400, step=50)
         question = st.text_input("設問文")
         answer_text = st.text_area("回答", height=200)
-        if st.form_submit_button("保存") and question.strip():
-            es.add(
-                EsAnswer(
-                    question=question,
-                    category=category,
-                    company_id=company_options[company_name],
-                    char_limit=int(char_limit) or None,
-                    answer=answer_text,
-                )
-            )
-            st.rerun()
+        if st.form_submit_button("保存"):
+            if not question.strip():
+                st.error("設問文を入力してください。")
+            elif run_write(
+                lambda: es.add(
+                    EsAnswer(
+                        question=question,
+                        category=category,
+                        company_id=company_options[company_name],
+                        char_limit=int(char_limit) or None,
+                        answer=answer_text,
+                    )
+                ),
+                success="保存しました。",
+            ):
+                st.rerun()
 
-    if not es.answers():
+    all_answers = es.answers()
+    if not all_answers:
         st.info("まだ回答がありません。")
         st.stop()
 
     c1, c2 = st.columns(2)
     filter_categories = c1.multiselect("カテゴリで絞り込み", constants.ES_CATEGORIES)
     keyword = c2.text_input("キーワード検索（設問・回答）")
+    needle = keyword.strip()
+    shown = [
+        answer
+        for answer in all_answers
+        if (not filter_categories or answer.category in filter_categories)
+        and (not needle or needle in answer.question or needle in answer.answer)
+    ]
+    st.caption(f"{len(shown)} / {len(all_answers)} 件")
 
-    for answer in es.search(categories=filter_categories, keyword=keyword):
+    for answer in shown:
         title = (
             f"[{answer.category}] {answer.question[:40]}"
             f"（{answer.company_name or '汎用'}）"
         )
         with st.expander(title):
-            new_text = st.text_area("回答", value=answer.answer, height=200, key=f"es{answer.id}")
+            new_text = st.text_area(
+                "回答",
+                value=answer.answer,
+                height=200,
+                key=f"es:{answer.id}:{answer.updated_at}",
+            )
             check = es.length_check(new_text, answer.char_limit)
             if check.limit is None:
                 st.caption(f"文字数: {check.length}")
@@ -257,13 +438,25 @@ elif page == "ES管理":
                 st.warning(f"文字数: {check.length} / {check.limit}（8割未満）")
             else:
                 st.caption(f"文字数: {check.length} / {check.limit}")
-            c1, c2 = st.columns([1, 5])
-            if c1.button("保存", key=f"save{answer.id}"):
-                es.update_text(answer.id or -1, new_text)
-                st.rerun()
-            if c2.button("削除", key=f"rm{answer.id}"):
-                es.delete(answer.id or -1)
-                st.rerun()
+
+            if st.button("保存", key=f"save{answer.id}"):
+                if new_text == answer.answer:
+                    st.info("変更はありませんでした。")
+                elif run_write(
+                    lambda aid=answer.id, text=new_text: es.update_text(aid or -1, text),
+                    success="回答を保存しました。",
+                ):
+                    st.rerun()
+
+            with st.popover("削除"):
+                st.warning("この回答と、ひもづく所見の履歴もすべて消えます。元に戻せません。")
+                if st.button(
+                    "削除する", key=f"rm{answer.id}", type="secondary"
+                ) and run_write(
+                    lambda aid=answer.id: es.delete(aid or -1),
+                    success="回答を削除しました。",
+                ):
+                    st.rerun()
 
 
 # --- 添削 ----------------------------------------------------------------
@@ -301,15 +494,16 @@ elif page == "添削":
         help="業界ごとに、読み手が気にしやすい観点を上乗せします。",
     )
     providers = available_providers()
-    provider = c2.selectbox(
+    provider_names = [p.name for p in providers]
+    provider_name = c2.selectbox(
         "実行先",
-        providers,
-        format_func=lambda p: p.name,
+        provider_names,
         help=(
             "既定は書き出しのみで、外部とは通信しません。"
             "Claude API は ANTHROPIC_API_KEY が設定されている場合だけ選べます。"
         ),
     )
+    provider = providers[provider_names.index(provider_name)]
     note = st.text_input("補足（任意）", placeholder="例: 文字数を削る方向で見てほしい")
 
     resolved_industry = None if industry == "指定なし" else industry
@@ -346,13 +540,16 @@ elif page == "添削":
 
     if st.button("所見を取る", type="primary"):
         try:
-            review = reviewer.run(
-                target, provider=provider, industry=resolved_industry, note=note
-            )
+            with st.spinner("所見を作成しています。しばらくお待ちください。"):
+                review = reviewer.run(
+                    target, provider=provider, industry=resolved_industry, note=note
+                )
         except ReviewError as error:
             st.error(str(error))
+        except DatabaseError as error:
+            st.error(f"保存できませんでした: {error}")
         else:
-            st.success(f"所見を保存しました（実行先: {review.provider}）")
+            flash(f"所見を保存しました（実行先: {review.provider}）")
             st.rerun()
 
     history = reviewer.history(target.id or -1)
@@ -373,8 +570,10 @@ elif page == "添削":
                     file_name=f"review_{review.id}.md",
                     key=f"dl_review_{review.id}",
                 )
-                if c1.button("削除", key=f"rm_review_{review.id}"):
-                    reviewer.delete(review.id or -1)
+                if c1.button("削除", key=f"rm_review_{review.id}") and run_write(
+                    lambda rid=review.id: reviewer.delete(rid or -1),
+                    success="所見を削除しました。",
+                ):
                     st.rerun()
 
 
@@ -390,10 +589,10 @@ elif page == "分析":
         st.stop()
 
     step_filter = st.selectbox("対象ステップ", ["すべて", *constants.DEFAULT_STEPS])
-    target = None if step_filter == "すべて" else step_filter
+    target_step = None if step_filter == "すべて" else step_filter
 
     def rate_frame(attribute: str, label: str) -> pd.DataFrame:
-        rates = selection.pass_rates(attribute, step_name=target)
+        rates = analytics.pass_rate_by(all_steps, attribute, step_name=target_step)
         return pd.DataFrame(
             [
                 {label: r.group, "通過": r.passed, "落選": r.failed, "通過率": f"{r.rate:.0%}"}
@@ -410,7 +609,7 @@ elif page == "分析":
         st.dataframe(rate_frame("test_type", "適性検査"), width="stretch", hide_index=True)
 
     st.subheader("選考ファネル")
-    rows = selection.funnel()
+    rows = analytics.funnel(all_steps, constants.DEFAULT_STEPS)
     frame = pd.DataFrame(
         [
             {
@@ -452,7 +651,7 @@ elif page == "書き出し":
     st.markdown(
         """選考記録と集計を、依頼文つきの Markdown にまとめて書き出します。
 
-**このアプリは外部と通信しません。** 書き出したファイルを誰にどこまで渡すかは、
+**この画面は外部と通信しません。** 書き出したファイルを誰にどこまで渡すかは、
 内容を確認したうえで利用者が決められます。
 
 - **含まれる**: 企業名・業界・志望度・応募経路・適性検査・選考ステップ・メモ欄・（選択時のみ）回答本文
@@ -461,24 +660,18 @@ elif page == "書き出し":
 メモ欄の内容は含まれます。認証情報をメモに書いている場合はプレビューで確認してください。"""
     )
 
-    companies = selection.companies()
-    if not companies:
+    summary = selection.dashboard(date.today())
+    if not summary.companies:
         st.info("企業が登録されると書き出せるようになります。")
         st.stop()
 
     include_answers = st.checkbox("回答本文も含める", value=False)
     markdown = ai_export.build_analysis_markdown(
-        companies,
-        selection.steps_by_company(),
+        summary.companies,
+        summary.steps_by_company,
         es_answers=es.answers() if include_answers else None,
     )
 
-    export_path = DB_PATH.parent / "ai_analysis.md"
-    c1, c2 = st.columns(2)
-    if c1.button(f"{export_path.name} に保存"):
-        export_path.write_text(markdown, encoding="utf-8")
-        st.success(f"保存しました: {export_path}")
-    c2.download_button("Markdown をダウンロード", markdown, file_name="ai_analysis.md")
-
+    st.download_button("Markdown をダウンロード", markdown, file_name="ai_analysis.md")
     with st.expander("書き出される内容のプレビュー", expanded=True):
         st.code(markdown, language="markdown")

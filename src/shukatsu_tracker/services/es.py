@@ -6,10 +6,9 @@
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 
-from ..db import EsAnswerRepository, transaction
+from ..db import Database, EsAnswerRepository, transaction
 from ..models import EsAnswer
 
 
@@ -37,9 +36,9 @@ class LengthCheck:
 class EsService:
     """ES 回答の保存と検索。"""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
-        self._conn = conn
-        self._answers = EsAnswerRepository(conn)
+    def __init__(self, db: Database) -> None:
+        self._db = db
+        self._answers = EsAnswerRepository(db)
 
     def answers(self) -> list[EsAnswer]:
         return self._answers.list_all()
@@ -53,7 +52,7 @@ class EsService:
             raise ValueError("設問文は必須です")
         if answer.char_limit is not None and answer.char_limit < 0:
             raise ValueError("文字数制限に負の値は指定できません")
-        with transaction(self._conn):
+        with transaction(self._db):
             return self._answers.add(
                 EsAnswer(
                     question=question,
@@ -65,11 +64,11 @@ class EsService:
             )
 
     def update_text(self, answer_id: int, text: str) -> None:
-        with transaction(self._conn):
+        with transaction(self._db):
             self._answers.update(answer_id, answer=text)
 
     def delete(self, answer_id: int) -> None:
-        with transaction(self._conn):
+        with transaction(self._db):
             self._answers.delete(answer_id)
 
     def search(

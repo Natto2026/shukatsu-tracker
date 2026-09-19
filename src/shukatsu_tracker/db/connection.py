@@ -1,34 +1,29 @@
-"""DB 接続。接続を作るのはこのモジュールだけ。
+"""接続の入口。接続を開くのはこのモジュールだけ。
 
-isolation_level を None にして sqlite3 の暗黙トランザクションを切り、
-開始と終了は transactions.transaction() が明示的に発行する。既定のままだと
-DDL が暗黙コミットされ、複数文をまとめて巻き戻せないため。
+接続先は文字列で受け取る。スキームのないものは SQLite のファイルパス、
+`postgresql://...` は PostgreSQL として扱う。どちらの場合も返すのは
+Database なので、上の層は接続先の種類を意識しない。
 """
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 
 from . import migrations
+from .database import Database
+from .dialects import resolve
 from .transactions import transaction
 
 __all__ = ["connect", "transaction"]
 
 
-def connect(db_path: str | Path) -> sqlite3.Connection:
-    """DB に接続し、未適用のマイグレーションを流して返す。
+def connect(target: str | Path) -> Database:
+    """接続し、未適用のマイグレーションを流して返す。
 
-    Streamlit は再描画のたびに別スレッドでスクリプトを実行するため
-    check_same_thread=False で接続する（書き込みは transaction() で直列に閉じる）。
+    接続は呼び出し側が所有する。画面はブラウザのセッションごとに1つ作る
+    （1つの接続を全セッションで共有すると、書き込みが互いに干渉するため）。
     """
-    path = Path(db_path)
-    if str(path.parent) not in ("", "."):
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-    conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
-    migrations.apply_pending(conn)
-    return conn
+    dialect, dsn = resolve(target)
+    db = Database(dialect.connect(dsn), dialect)
+    migrations.apply_pending(db)
+    return db
