@@ -219,3 +219,16 @@ class TestTargetIsNotLeaked:
         assert str(app_db) not in captions
         assert str(app_db.parent) not in captions
         assert "app.db" in captions
+
+    def test_a_windows_path_is_shortened_on_any_platform(self):
+        """OS をまたいでも短縮されること。
+
+        pathlib は動作中の OS の区切り文字しか見ない。Windows で作った設定を
+        Linux で表示したときに、パスがそのまま出てしまう不具合があった。
+        """
+        described = db.describe(r"C:\Users\somebody\Desktop\work\data\shukatsu.db")
+        assert described == "SQLite（shukatsu.db）"
+
+    def test_a_posix_path_is_shortened_on_any_platform(self):
+        described = db.describe("/home/someone/projects/data/shukatsu.db")
+        assert described == "SQLite（shukatsu.db）"
