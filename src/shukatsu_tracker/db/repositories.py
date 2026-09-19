@@ -11,7 +11,7 @@ import sqlite3
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from ..models import Company, EsAnswer, Step, StepView
+from ..models import Company, EsAnswer, Review, Step, StepView
 
 # 志望度は文字列順だと S が末尾に来るため、意味の順（S→A→B→C）を明示する
 _PRIORITY_ORDER = (
@@ -239,3 +239,63 @@ class EsAnswerRepository(_Table):
 
     def _today(self) -> str:
         return self._conn.execute("SELECT date('now', 'localtime')").fetchone()[0]
+
+
+class ReviewRepository(_Table):
+    table = "reviews"
+    writable = frozenset(
+        {
+            "es_answer_id",
+            "industry",
+            "provider",
+            "model",
+            "prompt",
+            "result",
+            "answer_snapshot",
+        }
+    )
+
+    @staticmethod
+    def _to_model(row: sqlite3.Row) -> Review:
+        return Review(
+            id=row["id"],
+            es_answer_id=row["es_answer_id"],
+            industry=row["industry"],
+            provider=row["provider"],
+            model=row["model"],
+            prompt=row["prompt"],
+            result=row["result"],
+            answer_snapshot=row["answer_snapshot"],
+            created_at=row["created_at"],
+        )
+
+    def add(self, review: Review) -> int:
+        return self._insert(
+            {
+                "es_answer_id": review.es_answer_id,
+                "industry": review.industry,
+                "provider": review.provider,
+                "model": review.model,
+                "prompt": review.prompt,
+                "result": review.result,
+                "answer_snapshot": review.answer_snapshot,
+            }
+        )
+
+    def get(self, review_id: int) -> Review | None:
+        row = self._conn.execute(
+            "SELECT * FROM reviews WHERE id = ?", (review_id,)
+        ).fetchone()
+        return None if row is None else self._to_model(row)
+
+    def list_for_answer(self, es_answer_id: int) -> list[Review]:
+        """新しいものから順に返す。"""
+        rows = self._conn.execute(
+            "SELECT * FROM reviews WHERE es_answer_id = ? ORDER BY id DESC",
+            (es_answer_id,),
+        ).fetchall()
+        return [self._to_model(row) for row in rows]
+
+    def latest_for_answer(self, es_answer_id: int) -> Review | None:
+        rows = self.list_for_answer(es_answer_id)
+        return rows[0] if rows else None

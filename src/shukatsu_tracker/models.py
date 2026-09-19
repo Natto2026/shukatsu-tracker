@@ -116,3 +116,22 @@ class FunnelRow:
     failed: int = 0
     in_progress: int = 0
     declined: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class Review:
+    """回答への所見1件。評価した時点の本文を控えて保存する。"""
+
+    es_answer_id: int
+    provider: str
+    prompt: str
+    result: str
+    answer_snapshot: str
+    industry: str = ""
+    model: str | None = None
+    created_at: str | None = None
+    id: int | None = None
+
+    def applies_to(self, current_answer: str) -> bool:
+        """所見を取ったあとに本文が書き換わっていないか。"""
+        return self.answer_snapshot == current_answer
