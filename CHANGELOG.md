@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-21
+
 ### Fixed
 - 保存先をサイドバーにそのまま表示していたため、ファイルパスに含まれる利用者名やフォルダ構成、PostgreSQL の接続文字列に含まれるパスワードが画面に出ていた。種別と最小限の識別子だけを出す形に変更し、漏れないことをテストで保証した
 - 企業研究リンクの説明が README・画面ラベル・docs/screens.md で三者三様に実装と食い違っていたのを、実際に生成する7本に統一（スクリーンショットも撮り直し）
@@ -19,6 +21,7 @@
 - README のスクリーンショットを現在の画面に更新(添削・企業管理を追加)
 
 ### Changed
+- ブランチ運用を main / develop / 作業ブランチの3層に変更。CONTRIBUTING.md にブランチの役割・開発フロー・リリース手順を明記し、CI の push 対象に develop を追加。既定ブランチは develop
 - scripts/demo_data.py のデモデータ配列を `# fmt: off` で囲み、1件=1行の表として読める並びを保つようにした
 - README に、総点検で見つけた不具合と直し方の一覧を追加(症状・原因・対処・回帰テストの対応表)
 - docs/data_flow.md に ER 図と索引の一覧、docs/screens.md に画面一覧（できること・呼ぶ層・書き込みの有無）を追加
@@ -138,7 +141,8 @@
 - 初版: ダッシュボード(締切アラート)・企業管理・ES設問ライブラリ・通過率分析
 - SQLite ローカル保存(パスワード非保存方針)、pytest によるテスト、GitHub Actions CI
 
-[Unreleased]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.3.0...v0.4.0

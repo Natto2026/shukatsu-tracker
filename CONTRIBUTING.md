@@ -2,12 +2,41 @@
 
 このリポジトリで開発するときの規約。
 
+## ブランチ運用
+
+main / develop / 作業ブランチの3層で運用する。
+
+| ブランチ | 役割 | 変更が入る経路 |
+|---|---|---|
+| `main` | リリース済みの状態だけを置く。タグ `vX.Y.Z` はここに打つ | develop からのリリース PR、または hotfix の PR |
+| `develop` | 次のリリースに向けて統合する場所。CI を常に緑に保つ。GitHub の既定ブランチ | 作業ブランチからの PR |
+| `feature/<Issue番号>-<内容>` | Issue 1件 = ブランチ1本。1つの PR で読み切れる大きさに収める | develop から切る |
+| `fix/…` `docs/…` `chore/…` | 不具合修正・文書・整備。粒度は feature と同じ | develop から切る |
+| `release/X.Y.Z` | リリース準備。バージョン番号と CHANGELOG の見出しを確定させるだけ | develop から切り、main へ PR |
+| `hotfix/…` | リリース済み main の緊急修正のみ | main から切り、main へ PR したあと develop にも取り込む |
+
+- main と develop へ直接 push しない。必ず PR を経由する
+  (private リポジトリではブランチ保護を設定できないため、規約として守る)
+- 作業ブランチの名前には Issue 番号を入れる(例: `feature/7-ical-export`)。PR 本文に `Closes #7` を書く
+- マージ後は作業ブランチを削除する
+
 ## 開発フロー
 
-- main への直接コミット禁止。必ず `feature/xxx` か `fix/xxx` ブランチ → Pull Request
-- PR 前にローカルで `ruff check .`・`ruff format --check .`・`python -m mypy`・`python -m pytest` をすべて通すこと
-- 挙動を変える修正には回帰テストを添える
-- マージ後は CHANGELOG.md の Unreleased に追記し、ブランチを削除する
+1. Issue を立てる(または既存の Issue を選ぶ)
+2. develop から作業ブランチを切る
+3. PR 前にローカルで `ruff check .`・`ruff format --check .`・`python -m mypy`・`python -m pytest` をすべて通す
+4. 挙動を変える修正には回帰テストを添える
+5. CHANGELOG.md の Unreleased に追記してから、develop への PR を出す
+6. CI が緑になったらマージし、作業ブランチを削除する
+
+## リリース手順
+
+1. develop から `release/X.Y.Z` を切る
+2. CHANGELOG.md の `## [Unreleased]` を `## [X.Y.Z] - YYYY-MM-DD` にし、新しい空の Unreleased と比較リンクを足す
+3. `pyproject.toml` と `src/shukatsu_tracker/__init__.py` のバージョンを揃える
+4. main へ PR を出し、CI が緑になったらマージする
+5. main に `vX.Y.Z` のタグを打ち、CHANGELOG のその版の本文で GitHub Release を作る
+6. main を develop に取り込む PR を出してマージし、両方を同じ状態にする
 
 ## 絶対に守ること(セキュリティ)
 
