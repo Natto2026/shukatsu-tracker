@@ -70,6 +70,7 @@ flowchart TB
     UI --> ES
     UI --> RV
     UI --> EX
+    UI --> AN
     RV --> CR
     RV --> PR
     RV --> PV
