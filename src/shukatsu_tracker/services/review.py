@@ -33,11 +33,6 @@ class ReviewService:
     # --- 観点 ---------------------------------------------------------
 
     @staticmethod
-    def industries_with_overlay() -> list[str]:
-        """上乗せの観点が用意されている業界。"""
-        return criteria_module.available_industries()
-
-    @staticmethod
     def criteria_for(industry: str | None) -> CriteriaSet:
         return criteria_module.for_industry(industry)
 
