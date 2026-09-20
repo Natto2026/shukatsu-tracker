@@ -20,6 +20,17 @@ DEFAULT_MAX_TOKENS = 16000
 DEFAULT_TIMEOUT_SECONDS = 120.0
 DEFAULT_MAX_RETRIES = 1
 API_KEY_ENV = "ANTHROPIC_API_KEY"
+MODEL_ENV = "SHUKATSU_REVIEW_MODEL"
+
+
+def configured_model() -> str:
+    """使うモデル名。環境変数で上書きでき、未設定なら既定値。
+
+    モデルは API キーと違って秘密ではないが、新しいモデルが出るたびに
+    コードを直すのは筋が悪いので、実行環境から差し替えられるようにする。
+    読むのは呼ばれた時点で、取り込み時に固定しない。
+    """
+    return os.environ.get(MODEL_ENV, "").strip() or DEFAULT_MODEL
 
 
 class ReviewError(RuntimeError):
@@ -76,14 +87,16 @@ class AnthropicProvider:
         self,
         client: Any | None = None,
         *,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         use_fallbacks: bool = True,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> None:
         self._client = client
-        self.model = model
+        # 明示的に渡された値 > 環境変数 > 既定値。既定引数で解決すると
+        # 取り込み時の環境変数で固定されてしまうため、ここで決める。
+        self.model = model or configured_model()
         self.max_tokens = max_tokens
         self.use_fallbacks = use_fallbacks
         self.timeout = timeout
