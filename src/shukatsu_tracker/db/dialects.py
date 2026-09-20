@@ -38,10 +38,6 @@ class Dialect(ABC):
         """マイグレーション SQL の差し込み記号に対する置換。"""
 
     @abstractmethod
-    def in_transaction(self, raw: Any) -> bool:
-        """トランザクションが開いているか。"""
-
-    @abstractmethod
     def translate_error(self, error: Exception) -> Exception | None:
         """ドライバ固有の例外を共通の型に翻訳する。対象外なら None。"""
 
@@ -82,9 +78,6 @@ class SqliteDialect(Dialect):
             TODAY: "date('now', 'localtime')",
             NOW: "datetime('now', 'localtime')",
         }
-
-    def in_transaction(self, raw: Any) -> bool:
-        return bool(raw.in_transaction)
 
     def translate_error(self, error: Exception) -> Exception | None:
         if not isinstance(error, sqlite3.IntegrityError):
@@ -127,11 +120,6 @@ class PostgresDialect(Dialect):
             TODAY: "to_char(CURRENT_DATE, 'YYYY-MM-DD')",
             NOW: "to_char(CURRENT_TIMESTAMP, 'YYYY-MM-DD HH24:MI:SS')",
         }
-
-    def in_transaction(self, raw: Any) -> bool:
-        import psycopg
-
-        return raw.info.transaction_status != psycopg.pq.TransactionStatus.IDLE
 
     def translate_error(self, error: Exception) -> Exception | None:
         try:
