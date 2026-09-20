@@ -57,9 +57,7 @@ class ReviewService:
             note=note,
         )
 
-    def build_prompt(
-        self, answer: EsAnswer, *, industry: str | None = None, note: str = ""
-    ) -> str:
+    def build_prompt(self, answer: EsAnswer, *, industry: str | None = None, note: str = "") -> str:
         """実行せずに、送られる文面だけを組み立てる。
 
         何を渡すことになるのかを、実行前に必ず確認できるようにするため。

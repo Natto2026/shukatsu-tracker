@@ -67,9 +67,7 @@ class EsService:
         with transaction(self._db):
             self._answers.delete(answer_id)
 
-    def search(
-        self, *, categories: list[str] | None = None, keyword: str = ""
-    ) -> list[EsAnswer]:
+    def search(self, *, categories: list[str] | None = None, keyword: str = "") -> list[EsAnswer]:
         """カテゴリとキーワードで絞り込む。どちらも空なら全件。"""
         needle = keyword.strip()
         results = []

@@ -75,9 +75,7 @@ def _criteria_table(criteria: CriteriaSet) -> str:
     for criterion in criteria:
         check = _cell(criterion.check)
         weak = _cell(criterion.weak)
-        lines.append(
-            f"| {criterion.title} | {criterion.emphasis_label} | {check} | {weak} |"
-        )
+        lines.append(f"| {criterion.title} | {criterion.emphasis_label} | {check} | {weak} |")
     return "\n".join(lines)
 
 

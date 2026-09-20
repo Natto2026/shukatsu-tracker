@@ -34,9 +34,7 @@ class TestBuildAnalysisMarkdown:
     STEP = make_step(company_id=1, company_name="テスト株式会社", result="落選", deadline="2026-07-01")
 
     def build(self, es_answers=None) -> str:
-        return ai_export.build_analysis_markdown(
-            [self.COMPANY], {1: [self.STEP]}, es_answers=es_answers
-        )
+        return ai_export.build_analysis_markdown([self.COMPANY], {1: [self.STEP]}, es_answers=es_answers)
 
     def test_contains_request_and_records(self):
         markdown = self.build()

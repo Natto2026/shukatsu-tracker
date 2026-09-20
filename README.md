@@ -200,6 +200,7 @@ v0.6.0 の前に、動いているように見えるアプリを疑って総点�
 
 ```bash
 ruff check .
+ruff format --check .
 python -m mypy
 python -m pytest
 ```
