@@ -28,6 +28,9 @@
 - UI(app.py)にロジックを書かない。集計は analytics.py(純粋関数)へ
 - 層をまたぐ受け渡しは models.py の dataclass で行う。dict を持ち回さない
 - SQL は db/repositories.py と db/migrations/*.sql だけに書き、値は必ずパラメータ化する
+  - 例外はスキーマ管理そのものだけ。db/migrations.py が schema_migrations を作る DDL と
+    適用済みバージョンを記録する INSERT、db/database.py が組み立てる INSERT / UPDATE の
+    ひな形がこれにあたる。テーブルごとの読み書きをここに足さない
 - 列名を動的に組み立てる場合は、リポジトリの `writable` に列挙した名前だけを通す
 - **スキーマ変更は新しい migration ファイルで行う**。適用済みの .sql は編集しない
 - 書き込みは services/ 側で `transaction()` に包む。repositories を裸で呼ばない
