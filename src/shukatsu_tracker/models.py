@@ -69,14 +69,6 @@ class EsAnswer:
     updated_at: str | None = None
     id: int | None = None
 
-    @property
-    def length(self) -> int:
-        return len(self.answer)
-
-    @property
-    def over_limit(self) -> bool:
-        return self.char_limit is not None and self.length > self.char_limit
-
 
 @dataclass(frozen=True, slots=True)
 class Deadline:
