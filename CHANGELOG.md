@@ -8,6 +8,9 @@
 
 ### Fixed
 - 保存先をサイドバーにそのまま表示していたため、ファイルパスに含まれる利用者名やフォルダ構成、PostgreSQL の接続文字列に含まれるパスワードが画面に出ていた。種別と最小限の識別子だけを出す形に変更し、漏れないことをテストで保証した
+- 企業研究リンクの説明が README・画面ラベル・docs/screens.md で三者三様に実装と食い違っていたのを、実際に生成する7本に統一（スクリーンショットも撮り直し）
+- 書き出しの保存先を文書が `data/ai_analysis.md` としていたのを修正。実際はブラウザへのダウンロードのみで、DB にもディスクにも書かない
+- docs/data_flow.md の ER 図で `schema_migrations.version` を int としていたのを text に修正（実装は TEXT）
 
 ### Added
 - 添削で Claude API に送るモデルを環境変数 `SHUKATSU_REVIEW_MODEL` で差し替えられるようにした（未設定なら従来どおり既定のモデル）。モデルを変えるためにコードを直さずに済む
@@ -24,6 +27,12 @@
 - CI の lint ジョブが ruff をバージョン指定なしで入れていたのを `pip install -e ".[dev]"` に変更。pyproject の `ruff>=0.6` に揃え、ruff の新版が出た日にコード無変更で CI が落ちないようにした
 - 企業研究リンクの受け渡しを dict から dataclass（`ResearchLink`）に変更。層をまたぐ受け渡しに dict を使わない方針の例外になっており、キー名の打ち間違いを型で検出できなかった
 - 書式を `ruff format` に統一し、CI の lint ジョブと PR テンプレートに `ruff format --check .` を追加。`line-length = 110` と宣言しながら実際は手で約88桁に折り返しており、設定と実コードが食い違っていた
+- docs/architecture.md のレイヤー図に、画面から集計（analytics）への依存を追記（実装は直接呼んでいるが図になかった）
+- docs/architecture.md の開発フローと PR テンプレートの確認項目に mypy を追記
+- CONTRIBUTING.md の「SQL を書く場所」の規約に、スキーマ管理自身（migrations.py・database.py）を例外として明記
+- CHANGELOG の各版にリンク定義を追加。タグのない 0.1.0 / 0.2.0 は見出しの角括弧を外した
+- `.gitignore` に `.mypy_cache/` と `.ruff_cache/` を追加（`.pytest_cache/` と揃えた）
+- docs/test_plan.md に残っていたテスト件数の表記を外し、「件数は書かない」という自身の宣言に揃えた
 
 ### Removed
 - `Dialect.in_transaction`（抽象メソッドと SQLite / PostgreSQL の実装）を削除。接続の状態でトランザクションの入れ子を判定する方式は 0.6.0 で取りやめており、呼び出し元のないまま残っていた
