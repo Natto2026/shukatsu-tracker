@@ -6,7 +6,7 @@
 | 画面 | できること | 呼ぶ層 | 書き込み |
 |---|---|---|---|
 | ダッシュボード | 7日以内の締切（期限超過を先頭に強調）、企業ごとの現在の状況 | `SelectionService.dashboard` → `analytics.company_status` | なし |
-| 企業管理 | 企業の追加・編集・削除。選考ステップの追加、締切と結果の更新、削除。企業研究リンク（公式・事業・IR・クチコミ・体験記）の生成 | `SelectionService`、`research.research_links`、`analytics.parse_date` | あり。削除は確認のチェックが必須 |
+| 企業管理 | 企業の追加・編集・削除。選考ステップの追加、締切と結果の更新、削除。企業研究リンク（公式・新卒採用・事業内容・IR・クチコミ・選考体験記・ニュース）の生成 | `SelectionService`、`research.research_links`、`analytics.parse_date` | あり。削除は確認のチェックが必須 |
 | ES管理 | 設問と回答の登録・編集、カテゴリとキーワードでの検索、文字数制限との照合（超過と8割未満を警告） | `EsService` | あり |
 | 添削 | 保存した回答に対する点検の依頼文を組み立てる。実行先を選んで結果と履歴を残す | `ReviewService`（実行先は `review/providers.py`） | あり（所見の保存）。通信は Claude API を選んだときだけ |
 | 分析 | 応募経路別・適性検査別の通過率、選考ファネル | `SelectionService.all_step_views` → `analytics.pass_rate_by` / `analytics.funnel` | なし |
