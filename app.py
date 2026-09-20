@@ -90,9 +90,7 @@ selection = SelectionService(database)
 es = EsService(database)
 reviewer = ReviewService(database)
 
-page = st.sidebar.radio(
-    "メニュー", ["ダッシュボード", "企業管理", "ES管理", "添削", "分析", "書き出し"]
-)
+page = st.sidebar.radio("メニュー", ["ダッシュボード", "企業管理", "ES管理", "添削", "分析", "書き出し"])
 st.sidebar.caption(f"保存先: {db.describe(DB_TARGET, base=Path(__file__).parent)}")
 show_flash()
 
@@ -139,9 +137,7 @@ if page == "ダッシュボード":
                 "業界": company.industry,
                 "応募経路": company.route,
                 "適性検査": company.test_type,
-                "現在の状況": analytics.company_status(
-                    summary.steps_by_company.get(company.id or -1, [])
-                ),
+                "現在の状況": analytics.company_status(summary.steps_by_company.get(company.id or -1, [])),
             }
             for company in summary.companies
         ]
@@ -156,18 +152,14 @@ elif page == "企業管理":
     st.title("企業管理")
     companies = selection.companies()
 
-    with st.expander("企業を追加", expanded=not companies), st.form(
-        "add_company", clear_on_submit=True
-    ):
+    with st.expander("企業を追加", expanded=not companies), st.form("add_company", clear_on_submit=True):
         name = st.text_input("企業名 *")
         c1, c2, c3 = st.columns(3)
         industry = c1.selectbox("業界", constants.INDUSTRIES)
         priority = c2.selectbox("志望度", constants.PRIORITIES, index=1)
         route = c3.selectbox("応募経路", constants.ROUTES)
         c4, c5 = st.columns(2)
-        test_type = c4.selectbox(
-            "適性検査", constants.TEST_TYPES, index=len(constants.TEST_TYPES) - 1
-        )
+        test_type = c4.selectbox("適性検査", constants.TEST_TYPES, index=len(constants.TEST_TYPES) - 1)
         login_email = c5.text_input("マイページ登録メール")
         mypage_url = st.text_input("マイページURL")
         memo = st.text_area("メモ", height=68)
@@ -196,9 +188,7 @@ elif page == "企業管理":
     if not companies:
         st.stop()
 
-    selected = st.selectbox(
-        "企業を選択", companies, format_func=lambda c: f"{c.name}（{c.priority}）"
-    )
+    selected = st.selectbox("企業を選択", companies, format_func=lambda c: f"{c.name}（{c.priority}）")
     company_id = selected.id or -1
     # 一覧と状況の両方をこの1回の問い合わせで賄う
     steps = selection.steps_by_company().get(company_id, [])
@@ -252,9 +242,7 @@ elif page == "企業管理":
                 key=f"rs:{token}",
                 label_visibility="collapsed",
             )
-            edited.append(
-                (step.id or -1, new_deadline, new_result, step.deadline, step.result)
-            )
+            edited.append((step.id or -1, new_deadline, new_result, step.deadline, step.result))
 
         if st.form_submit_button("選考ステップを保存", type="primary"):
             current = {s.id: s for s in selection.steps_of(company_id)}
@@ -272,9 +260,7 @@ elif page == "企業管理":
                 # 表示していた値と違うものだけを書く。読めない締切に
                 # 触っていない場合は、空欄に見えていても書き換えない。
                 if new_deadline != rendered:
-                    fields["deadline"] = (
-                        new_deadline.isoformat() if new_deadline else None
-                    )
+                    fields["deadline"] = new_deadline.isoformat() if new_deadline else None
                 if new_result != old_result:
                     fields["result"] = new_result
                 if fields:
@@ -320,9 +306,7 @@ elif page == "企業管理":
         e_priority = c2.selectbox(
             "志望度", constants.PRIORITIES, index=constants.PRIORITIES.index(selected.priority)
         )
-        e_route = c3.selectbox(
-            "応募経路", constants.ROUTES, index=constants.ROUTES.index(selected.route)
-        )
+        e_route = c3.selectbox("応募経路", constants.ROUTES, index=constants.ROUTES.index(selected.route))
         c4, c5 = st.columns(2)
         e_test = c4.selectbox(
             "適性検査",
@@ -418,10 +402,7 @@ elif page == "ES管理":
     st.caption(f"{len(shown)} / {len(all_answers)} 件")
 
     for answer in shown:
-        title = (
-            f"[{answer.category}] {answer.question[:40]}"
-            f"（{answer.company_name or '汎用'}）"
-        )
+        title = f"[{answer.category}] {answer.question[:40]}（{answer.company_name or '汎用'}）"
         with st.expander(title):
             new_text = st.text_area(
                 "回答",
@@ -450,9 +431,7 @@ elif page == "ES管理":
 
             with st.popover("削除"):
                 st.warning("この回答と、ひもづく所見の履歴もすべて消えます。元に戻せません。")
-                if st.button(
-                    "削除する", key=f"rm{answer.id}", type="secondary"
-                ) and run_write(
+                if st.button("削除する", key=f"rm{answer.id}", type="secondary") and run_write(
                     lambda aid=answer.id: es.delete(aid or -1),
                     success="回答を削除しました。",
                 ):
@@ -481,11 +460,7 @@ elif page == "添削":
 
     default_industry = reviewer.industry_of(target)
     industry_options = ["指定なし", *constants.INDUSTRIES]
-    industry_index = (
-        industry_options.index(default_industry)
-        if default_industry in industry_options
-        else 0
-    )
+    industry_index = industry_options.index(default_industry) if default_industry in industry_options else 0
     c1, c2 = st.columns(2)
     industry = c1.selectbox(
         "観点を寄せる業界",
@@ -519,10 +494,7 @@ elif page == "添削":
         st.caption(criteria.reader)
         st.dataframe(
             pd.DataFrame(
-                [
-                    {"観点": c.title, "重み": c.emphasis_label, "見るところ": c.check}
-                    for c in criteria
-                ]
+                [{"観点": c.title, "重み": c.emphasis_label, "見るところ": c.check} for c in criteria]
             ),
             width="stretch",
             hide_index=True,
@@ -534,16 +506,13 @@ elif page == "添削":
 
     if provider.sends_data_externally:
         st.warning(
-            "この実行先を選ぶと、上の文面が外部に送信されます。"
-            "含めたくない記述がないか確認してください。"
+            "この実行先を選ぶと、上の文面が外部に送信されます。含めたくない記述がないか確認してください。"
         )
 
     if st.button("所見を取る", type="primary"):
         try:
             with st.spinner("所見を作成しています。しばらくお待ちください。"):
-                review = reviewer.run(
-                    target, provider=provider, industry=resolved_industry, note=note
-                )
+                review = reviewer.run(target, provider=provider, industry=resolved_industry, note=note)
         except ReviewError as error:
             st.error(str(error))
         except DatabaseError as error:
@@ -594,10 +563,7 @@ elif page == "分析":
     def rate_frame(attribute: str, label: str) -> pd.DataFrame:
         rates = analytics.pass_rate_by(all_steps, attribute, step_name=target_step)
         return pd.DataFrame(
-            [
-                {label: r.group, "通過": r.passed, "落選": r.failed, "通過率": f"{r.rate:.0%}"}
-                for r in rates
-            ]
+            [{label: r.group, "通過": r.passed, "落選": r.failed, "通過率": f"{r.rate:.0%}"} for r in rates]
         )
 
     c1, c2 = st.columns(2)

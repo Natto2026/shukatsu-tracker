@@ -137,8 +137,7 @@ def apply_pending(db: Database, directory: Path = MIGRATIONS_DIR) -> list[Migrat
         try:
             now_expression = db.dialect.substitutions()[NOW]
             record_sql = (
-                "INSERT INTO schema_migrations (version, name, applied_at) "
-                f"VALUES (?, ?, {now_expression})"
+                f"INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, {now_expression})"
             )
             with transaction(db):
                 for statement in migration.statements():
@@ -149,9 +148,7 @@ def apply_pending(db: Database, directory: Path = MIGRATIONS_DIR) -> list[Migrat
             # で冪等なので、記録の重複だけを無視して次へ進む。
             continue
         except Exception as error:
-            raise MigrationError(
-                f"{migration.path.name} の適用に失敗しました: {error}"
-            ) from error
+            raise MigrationError(f"{migration.path.name} の適用に失敗しました: {error}") from error
         applied.append(migration)
     return applied
 

@@ -33,9 +33,7 @@ def test_page_renders_without_error(app, page):
 
 def test_dashboard_shows_registered_company(app, tmp_path):
     conn = db.connect(tmp_path / "smoke.db")
-    SelectionService(conn).add_company(
-        Company(name="サンプル株式会社", route="スカウト・逆求人")
-    )
+    SelectionService(conn).add_company(Company(name="サンプル株式会社", route="スカウト・逆求人"))
     conn.close()
 
     at = app.run()

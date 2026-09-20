@@ -59,10 +59,7 @@ def build_analysis_markdown(
     if rows:
         lines += ["### 選考ファネル", ""]
         lines += ["| ステップ | 通過 | 落選 | 選考中 | 辞退 |", "|---|---|---|---|---|"]
-        lines += [
-            f"| {r.step} | {r.passed} | {r.failed} | {r.in_progress} | {r.declined} |"
-            for r in rows
-        ]
+        lines += [f"| {r.step} | {r.passed} | {r.failed} | {r.in_progress} | {r.declined} |" for r in rows]
         lines.append("")
 
     lines += ["## 企業別の選考記録", ""]

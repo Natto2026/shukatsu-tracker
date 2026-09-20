@@ -30,9 +30,7 @@ def parse_date(value: str | None) -> date | None:
         return None
 
 
-def upcoming_deadlines(
-    steps: Iterable[StepView], today: date, within_days: int = 7
-) -> list[Deadline]:
+def upcoming_deadlines(steps: Iterable[StepView], today: date, within_days: int = 7) -> list[Deadline]:
     """締切が within_days 日以内の未完了ステップを、締切が近い順に返す。
 
     期限超過のものも含める（見落としこそ防ぎたいため）。
@@ -50,9 +48,7 @@ def upcoming_deadlines(
     return sorted(found, key=lambda d: d.days_left)
 
 
-def pass_rate_by(
-    steps: Iterable[StepView], attribute: str, step_name: str | None = None
-) -> list[PassRate]:
+def pass_rate_by(steps: Iterable[StepView], attribute: str, step_name: str | None = None) -> list[PassRate]:
     """属性（route / test_type / industry）ごとの通過率を、高い順に返す。
 
     step_name を指定するとそのステップだけを対象にする（例: "ES"）。
@@ -82,9 +78,7 @@ def funnel(steps: Iterable[StepView], step_order: Sequence[str]) -> list[FunnelR
     """
     counts: dict[str, dict[str, int]] = {}
     for step in steps:
-        row = counts.setdefault(
-            step.name, {PASSED: 0, FAILED: 0, IN_PROGRESS: 0, DECLINED: 0}
-        )
+        row = counts.setdefault(step.name, {PASSED: 0, FAILED: 0, IN_PROGRESS: 0, DECLINED: 0})
         if step.result in row:
             row[step.result] += 1
 

@@ -30,9 +30,7 @@ def answers(conn) -> EsAnswerRepository:
 
 class TestCompanyRepository:
     def test_add_and_get_roundtrip(self, companies):
-        company_id = companies.add(
-            Company(name="テスト株式会社", route="スカウト・逆求人", priority="A")
-        )
+        company_id = companies.add(Company(name="テスト株式会社", route="スカウト・逆求人", priority="A"))
         stored = companies.get(company_id)
         assert stored is not None
         assert stored.name == "テスト株式会社"
@@ -88,9 +86,7 @@ class TestStepRepository:
 class TestEsAnswerRepository:
     def test_answer_survives_company_deletion(self, companies, answers):
         company_id = companies.add(Company(name="テスト株式会社"))
-        answers.add(
-            EsAnswer(question="学生時代に力を入れたこと", company_id=company_id, char_limit=400)
-        )
+        answers.add(EsAnswer(question="学生時代に力を入れたこと", company_id=company_id, char_limit=400))
         companies.delete(company_id)
         stored = answers.list_all()
         assert len(stored) == 1
