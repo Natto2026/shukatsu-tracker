@@ -124,6 +124,7 @@ erDiagram
 | `CriteriaSet` / `Criterion` | `review/criteria.py`（TOML から） | 依頼文の組み立て・画面表示 |
 | `ReviewRequest` / `ReviewResult` | `review/` | 実行先とのやり取り |
 | `Review` | `ReviewService.run()` | 履歴の保存と表示 |
+| `ResearchLink` | `research.research_links()` | 企業管理画面のリンク一覧 |
 
 層をまたぐ受け渡しに dict を使わないのは、キー名の打ち間違いが実行時まで
 分からないため。表示名（「通過」「落選」などの日本語見出し）は UI 側で与える。
