@@ -98,9 +98,7 @@ class AnthropicProvider:
         try:
             import anthropic
         except ImportError as error:
-            raise ReviewError(
-                'Claude API を使うには追加の依存が必要です: pip install -e ".[llm]"'
-            ) from error
+            raise ReviewError('Claude API を使うには追加の依存が必要です: pip install -e ".[llm]"') from error
         if not self.is_configured():
             raise ReviewError(
                 f"環境変数 {API_KEY_ENV} が設定されていません。"
@@ -126,9 +124,7 @@ class AnthropicProvider:
 
         response = self._call(client, params)
         if getattr(response, "stop_reason", None) == "refusal":
-            raise ReviewError(
-                "評価の実行が安全上の理由で見送られました。回答本文の内容を確認してください。"
-            )
+            raise ReviewError("評価の実行が安全上の理由で見送られました。回答本文の内容を確認してください。")
 
         text = extract_text(response)
         if not text:
@@ -169,9 +165,7 @@ class AnthropicProvider:
 def extract_text(response: Any) -> str:
     """応答から本文のブロックだけを取り出して連結する。"""
     parts = [
-        block.text
-        for block in getattr(response, "content", [])
-        if getattr(block, "type", None) == "text"
+        block.text for block in getattr(response, "content", []) if getattr(block, "type", None) == "text"
     ]
     return "\n".join(part for part in parts if part).strip()
 

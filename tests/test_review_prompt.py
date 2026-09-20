@@ -27,9 +27,7 @@ def test_contains_the_target():
 
 
 def test_reports_length_without_a_limit():
-    built = prompt_module.build(
-        ReviewRequest(question="設問", answer="回答本文", char_limit=None)
-    )
+    built = prompt_module.build(ReviewRequest(question="設問", answer="回答本文", char_limit=None))
     assert "制限の指定なし" in built
 
 
@@ -41,12 +39,8 @@ def test_lists_every_criterion():
 
 
 def test_industry_changes_the_criteria_shown():
-    finance = prompt_module.build(
-        ReviewRequest(question="設問", answer="回答本文", industry="金融")
-    )
-    web = prompt_module.build(
-        ReviewRequest(question="設問", answer="回答本文", industry="Web・ネット")
-    )
+    finance = prompt_module.build(ReviewRequest(question="設問", answer="回答本文", industry="金融"))
+    web = prompt_module.build(ReviewRequest(question="設問", answer="回答本文", industry="Web・ネット"))
     assert finance != web
     assert "数字と根拠の確かさ" in finance
     assert "数字と根拠の確かさ" not in web

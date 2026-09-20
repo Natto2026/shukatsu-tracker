@@ -5,7 +5,7 @@
 ## 開発フロー
 
 - main への直接コミット禁止。必ず `feature/xxx` か `fix/xxx` ブランチ → Pull Request
-- PR 前にローカルで `ruff check .`・`python -m mypy`・`python -m pytest` をすべて通すこと
+- PR 前にローカルで `ruff check .`・`ruff format --check .`・`python -m mypy`・`python -m pytest` をすべて通すこと
 - 挙動を変える修正には回帰テストを添える
 - マージ後は CHANGELOG.md の Unreleased に追記し、ブランチを削除する
 
@@ -24,6 +24,7 @@
 ## コーディング規約
 
 - ruff の設定(pyproject.toml)に従う。行長 110
+- 書式は `ruff format` に任せる。手で折り返さない(CI が `ruff format --check .` で検査する)
 - **層を越えない**: app.py → services/ → db/ の一方向。UI から repositories を直接呼ばない
 - UI(app.py)にロジックを書かない。集計は analytics.py(純粋関数)へ
 - 層をまたぐ受け渡しは models.py の dataclass で行う。dict を持ち回さない

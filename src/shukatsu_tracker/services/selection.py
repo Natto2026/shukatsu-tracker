@@ -172,9 +172,7 @@ class SelectionService:
         """画面1枚ぶんの情報を、テーブルごとに1回ずつの問い合わせで集める。"""
         grouped = self.steps_by_company()
         companies = self._companies.list_all()
-        active = sum(
-            1 for company in companies if analytics.is_active(grouped.get(company.id or -1, []))
-        )
+        active = sum(1 for company in companies if analytics.is_active(grouped.get(company.id or -1, [])))
         all_steps = [step for steps in grouped.values() for step in steps]
         return DashboardSummary(
             companies=companies,

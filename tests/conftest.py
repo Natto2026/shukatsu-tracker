@@ -71,7 +71,5 @@ def table_names(database: Database) -> set[str]:
     if database.dialect.name == "sqlite":
         rows = database.fetchall("SELECT name FROM sqlite_master WHERE type = 'table'")
         return {row[0] for row in rows}
-    rows = database.fetchall(
-        "SELECT tablename FROM pg_tables WHERE schemaname = current_schema()"
-    )
+    rows = database.fetchall("SELECT tablename FROM pg_tables WHERE schemaname = current_schema()")
     return {row["tablename"] for row in rows}

@@ -36,9 +36,7 @@ def seed_company(path, *, deadline: str | None = None) -> tuple[int, int]:
     database = open_db(path)
     try:
         selection = SelectionService(database)
-        company_id = selection.add_company(
-            Company(name="テスト株式会社"), with_default_steps=False
-        )
+        company_id = selection.add_company(Company(name="テスト株式会社"), with_default_steps=False)
         step_id = selection.add_step(company_id, "ES", deadline=deadline)
     finally:
         database.close()
@@ -48,9 +46,7 @@ def seed_company(path, *, deadline: str | None = None) -> tuple[int, int]:
 def read_step(path, step_id: int) -> tuple[str | None, str]:
     database = open_db(path)
     try:
-        row = database.fetchone(
-            "SELECT deadline, result FROM steps WHERE id = ?", (step_id,)
-        )
+        row = database.fetchone("SELECT deadline, result FROM steps WHERE id = ?", (step_id,))
         return row["deadline"], row["result"]
     finally:
         database.close()
@@ -87,9 +83,7 @@ class TestNoWriteOnRender:
 
         database = open_db(app_db)
         try:
-            SelectionService(database).update_step(
-                step_id, deadline="2026-11-05", result="通過"
-            )
+            SelectionService(database).update_step(step_id, deadline="2026-11-05", result="通過")
         finally:
             database.close()
 

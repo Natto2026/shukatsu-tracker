@@ -63,10 +63,17 @@ def main() -> None:
     environment = {**os.environ, "SHUKATSU_DB": str(DEMO_DB)}
     server = subprocess.Popen(
         [
-            sys.executable, "-m", "streamlit", "run", "app.py",
-            "--server.port", str(port),
-            "--server.headless", "true",
-            "--browser.gatherUsageStats", "false",
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            "app.py",
+            "--server.port",
+            str(port),
+            "--server.headless",
+            "true",
+            "--browser.gatherUsageStats",
+            "false",
         ],
         cwd=ROOT,
         env=environment,
