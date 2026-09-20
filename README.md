@@ -206,6 +206,7 @@ python -m pytest
 トランザクション）と、Streamlit AppTest による画面のテストで構成しています。
 画面のテストは「例外が出ないこと」だけでなく「描画しただけで書き換えないこと」
 「古い表示で新しい変更を潰さないこと」を確認します。
+観点とテストの対応は [docs/test_plan.md](docs/test_plan.md) にまとめています。
 
 CI では Python 3.11 / 3.13 の SQLite に加えて、同じテスト一式を実際の
 PostgreSQL に対しても走らせています。
