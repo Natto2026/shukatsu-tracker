@@ -163,7 +163,7 @@ flowchart TB
 
 ## 開発フロー
 
-Issue 起点 → `feature/xxx` または `fix/xxx` ブランチ → ruff + pytest をローカルで通す →
-Pull Request（CI: lint、SQLite で 3.11/3.13、実際の PostgreSQL で同じテスト一式）
+Issue 起点 → `feature/xxx` または `fix/xxx` ブランチ → ruff + mypy + pytest をローカルで通す →
+Pull Request（CI: lint、typecheck、SQLite で 3.11/3.13、実際の PostgreSQL で同じテスト一式）
 → マージ → ブランチ削除。
 節目で CHANGELOG を更新し、セマンティックバージョニングでタグ+リリースを切る。
