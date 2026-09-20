@@ -11,6 +11,7 @@
 
 ### Added
 - 添削で Claude API に送るモデルを環境変数 `SHUKATSU_REVIEW_MODEL` で差し替えられるようにした（未設定なら従来どおり既定のモデル）。モデルを変えるためにコードを直さずに済む
+- `pyproject.toml` の依存に `altair` を明記（app.py が直接 import しているが、streamlit の依存として入ってくるのに頼っていた）
 - スクリーンショットをデモデータから自動で撮り直すスクリプト(`scripts/capture_screenshots.py`)
 - README のスクリーンショットを現在の画面に更新(添削・企業管理を追加)
 
