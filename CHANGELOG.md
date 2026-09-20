@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-21
+
 ### Fixed
 - 保存先をサイドバーにそのまま表示していたため、ファイルパスに含まれる利用者名やフォルダ構成、PostgreSQL の接続文字列に含まれるパスワードが画面に出ていた。種別と最小限の識別子だけを出す形に変更し、漏れないことをテストで保証した
 - 企業研究リンクの説明が README・画面ラベル・docs/screens.md で三者三様に実装と食い違っていたのを、実際に生成する7本に統一（スクリーンショットも撮り直し）
@@ -139,7 +141,8 @@
 - 初版: ダッシュボード(締切アラート)・企業管理・ES設問ライブラリ・通過率分析
 - SQLite ローカル保存(パスワード非保存方針)、pytest によるテスト、GitHub Actions CI
 
-[Unreleased]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.3.0...v0.4.0
