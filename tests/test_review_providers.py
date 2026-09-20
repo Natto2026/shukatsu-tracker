@@ -12,10 +12,13 @@ import pytest
 from shukatsu_tracker.review.prompt import ReviewRequest
 from shukatsu_tracker.review.providers import (
     API_KEY_ENV,
+    DEFAULT_MODEL,
+    MODEL_ENV,
     AnthropicProvider,
     ExportProvider,
     ReviewError,
     available_providers,
+    configured_model,
     extract_text,
 )
 
@@ -85,6 +88,32 @@ class TestAnthropicProvider:
         AnthropicProvider(client).review(REQUEST, PROMPT)
         assert client.calls[0]["fallbacks"] == "default"
         assert client.calls[0]["betas"] == ["server-side-fallback-2026-07-01"]
+
+    def test_model_defaults_when_the_environment_is_unset(self, monkeypatch):
+        monkeypatch.delenv(MODEL_ENV, raising=False)
+        assert configured_model() == DEFAULT_MODEL
+        assert AnthropicProvider().model == DEFAULT_MODEL
+
+    def test_model_can_be_overridden_by_the_environment(self, monkeypatch):
+        monkeypatch.setenv(MODEL_ENV, "claude-sonnet-5")
+        assert configured_model() == "claude-sonnet-5"
+        client = FakeClient(FakeResponse([FakeBlock("text", "所見")]))
+        AnthropicProvider(client).review(REQUEST, PROMPT)
+        assert client.calls[0]["model"] == "claude-sonnet-5"
+
+    def test_a_blank_environment_value_falls_back_to_the_default(self, monkeypatch):
+        monkeypatch.setenv(MODEL_ENV, "   ")
+        assert configured_model() == DEFAULT_MODEL
+
+    def test_an_explicit_model_wins_over_the_environment(self, monkeypatch):
+        monkeypatch.setenv(MODEL_ENV, "claude-sonnet-5")
+        assert AnthropicProvider(model="claude-opus-4-8").model == "claude-opus-4-8"
+
+    def test_the_environment_is_read_at_call_time_not_at_import(self, monkeypatch):
+        monkeypatch.setenv(MODEL_ENV, "claude-haiku-4-5")
+        assert AnthropicProvider().model == "claude-haiku-4-5"
+        monkeypatch.delenv(MODEL_ENV, raising=False)
+        assert AnthropicProvider().model == DEFAULT_MODEL
 
     def test_fallback_can_be_switched_off(self):
         client = FakeClient(FakeResponse([FakeBlock("text", "所見")]))

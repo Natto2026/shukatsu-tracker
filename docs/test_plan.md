@@ -118,7 +118,8 @@
 | 依頼文に本文・文字数・全観点が入り、業界で変わる | `test_contains_the_target`、`test_reports_length_without_a_limit`、`test_lists_every_criterion`、`test_industry_changes_the_criteria_shown` |
 | 補足は与えたときだけ入る。複数行の観点で表が崩れない。空入力は拒否。事実の捏造を禁じる指示が入る | `test_note_is_included_only_when_given`、`test_multiline_criteria_do_not_break_the_table`、`test_empty_input_is_rejected`、`test_system_prompt_forbids_inventing_facts` |
 | 既定の実行先は依頼文をそのまま返し、通信しないと宣言する | `test_returns_the_prompt_unchanged`、`test_declares_that_it_does_not_send_data` |
-| API の実行先は送信内容・拒否・空応答・依存やキーの欠如を扱える | `TestAnthropicProvider` の8件、`TestExtractText` の2件 |
+| API の実行先は送信内容・拒否・空応答・依存やキーの欠如を扱える | `TestAnthropicProvider`、`TestExtractText` |
+| モデルは環境変数で差し替えられ、未設定・空白なら既定に戻る。明示指定が環境変数より優先される | `test_model_defaults_when_the_environment_is_unset`、`test_model_can_be_overridden_by_the_environment`、`test_a_blank_environment_value_falls_back_to_the_default`、`test_an_explicit_model_wins_over_the_environment`、`test_the_environment_is_read_at_call_time_not_at_import` |
 | 実行先の一覧は通信しないものが先頭、API はキーがあるときだけ | `test_offline_provider_is_always_first`、`test_api_provider_appears_when_the_key_is_set` |
 | 所見は依頼文と本文の写しごと保存され、後の書き換えを検出する | `test_run_saves_the_review`、`test_prompt_is_stored_with_the_result`、`test_snapshot_detects_a_later_edit` |
 | 履歴は新しい順。未保存の回答は点検できない | `test_history_is_newest_first`、`test_unsaved_answer_is_rejected` |
