@@ -10,7 +10,7 @@
 | ES管理 | 設問と回答の登録・編集、カテゴリとキーワードでの検索、文字数制限との照合（超過と8割未満を警告） | `EsService` | あり |
 | 添削 | 保存した回答に対する点検の依頼文を組み立てる。実行先を選んで結果と履歴を残す | `ReviewService`（実行先は `review/providers.py`） | あり（所見の保存）。通信は Claude API を選んだときだけ |
 | 分析 | 応募経路別・適性検査別の通過率、選考ファネル | `SelectionService.all_step_views` → `analytics.pass_rate_by` / `analytics.funnel` | なし |
-| 書き出し | 選考記録と集計を依頼文つき Markdown に書き出す | `SelectionService.dashboard`、`ai_export.build_analysis_markdown` | ファイル書き出しのみ |
+| 書き出し | 選考記録と集計を依頼文つき Markdown に書き出す | `SelectionService.dashboard`、`ai_export.build_analysis_markdown` | なし（ブラウザへのダウンロードのみ。DB・ディスクへの書き込みなし） |
 
 ## 共通部分
 
