@@ -28,10 +28,6 @@ class LengthCheck:
         """制限の8割に満たないか（指定枠を使い切れていない状態）。"""
         return self.limit is not None and self.length < int(self.limit * 0.8)
 
-    @property
-    def remaining(self) -> int | None:
-        return None if self.limit is None else self.limit - self.length
-
 
 class EsService:
     """ES 回答の保存と検索。"""
