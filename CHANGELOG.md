@@ -21,6 +21,7 @@
 
 ### Removed
 - `Dialect.in_transaction`（抽象メソッドと SQLite / PostgreSQL の実装）を削除。接続の状態でトランザクションの入れ子を判定する方式は 0.6.0 で取りやめており、呼び出し元のないまま残っていた
+- `EsAnswer.length` / `EsAnswer.over_limit` と `LengthCheck.remaining` を削除。文字数の判定は `services/es.py` の `LengthCheck` に集約してあり、モデル側の同じ判定は呼ばれていなかった
 
 ## [0.6.0] - 2026-09-17
 
