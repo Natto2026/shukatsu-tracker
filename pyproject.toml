@@ -10,6 +10,9 @@ requires-python = ">=3.11"
 dependencies = [
     "streamlit>=1.36",
     "pandas>=2.0",
+    # app.py が直接 import する。streamlit の依存として入ってくるが、
+    # 直接使うものは自分で宣言する（streamlit 側が外しても壊れないように）。
+    "altair>=5.0",
 ]
 
 [project.optional-dependencies]
