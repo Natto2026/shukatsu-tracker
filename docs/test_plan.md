@@ -24,7 +24,7 @@
 | ステップ名で絞り込める | `test_filter_by_step_name` |
 | 想定外の属性名は受け付けない | `test_unknown_attribute_is_rejected` |
 | ファネルは既定の選考順で数える | `test_counts_in_standard_order` |
-| 企業の状況判定（ステップなし・落選優先・最初の選考中・全通過） | `TestCompanyStatus` の4件 |
+| 企業の状況判定（ステップなし・落選優先・最初の選考中・全通過） | `TestCompanyStatus` |
 
 ### リポジトリ（`tests/test_repositories.py`）
 
@@ -95,7 +95,7 @@
 | 入力エラーは例外ではなく文面で出る | `test_duplicate_company_name_shows_a_message_not_a_traceback`、`test_blank_company_name_is_reported` |
 | 削除は確認しないと押せない。確認すれば消える | `test_delete_is_disabled_until_confirmed`、`test_delete_works_once_confirmed` |
 | セッションごとに接続を持ち、別接続から書き込みが見える | `test_each_session_opens_its_own_connection`、`test_write_through_the_app_is_visible_to_another_connection` |
-| 保存先の表示にパスワードや絶対パスが出ない | `TestTargetIsNotLeaked` の6件 |
+| 保存先の表示にパスワードや絶対パスが出ない | `TestTargetIsNotLeaked` |
 
 ### 企業研究リンク・書き出し（`tests/test_research_and_export.py`）
 
