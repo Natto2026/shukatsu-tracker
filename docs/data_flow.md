@@ -95,7 +95,7 @@ erDiagram
         text created_at
     }
     schema_migrations {
-        int version PK
+        text version PK
         text name
         text applied_at
     }
