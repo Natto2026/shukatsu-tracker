@@ -29,7 +29,8 @@ shukatsu_tracker = ["db/migrations/*.sql", "review/criteria/*.toml", "review/cri
 testpaths = ["tests"]
 
 [tool.mypy]
-python_version = "3.11"
+# 対象バージョンは固定しない（実行している Python に合わせる）。
+# 3.11 に固定すると、numpy の型スタブが含む 3.12 以降の構文で検査が止まるため。
 files = ["src", "app.py"]
 # streamlit / pandas / psycopg は型スタブが揃っていないため、未解決の import は無視する
 ignore_missing_imports = true
@@ -37,12 +38,6 @@ ignore_missing_imports = true
 check_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
-
-# numpy / pandas の型スタブは 3.12 以降の構文を含み、3.11 向けの検査で構文エラーになる。
-# どちらも検査対象ではないので、import 先を追わない
-[[tool.mypy.overrides]]
-module = ["numpy", "numpy.*", "pandas", "pandas.*"]
-follow_imports = "skip"
 
 [tool.ruff]
 line-length = 110
