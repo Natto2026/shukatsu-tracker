@@ -214,7 +214,7 @@ elif page == "企業管理":
     if selected.memo:
         st.caption(as_text(selected.memo))
 
-    with st.expander("企業研究リンク（公式・事業内容・クチコミ・選考体験記）"):
+    with st.expander("企業研究リンク（公式・新卒採用・事業内容・IR・クチコミ・選考体験記・ニュース）"):
         links = research.research_links(selected.name)
         st.markdown(" / ".join(f"[{link.label}]({link.url})" for link in links))
 
