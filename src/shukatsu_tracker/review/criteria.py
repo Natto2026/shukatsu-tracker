@@ -126,11 +126,7 @@ def for_industry(industry: str | None) -> CriteriaSet:
             current = merged.get(emphasized)
             if current is None:
                 raise ValueError(f"emphasis に未定義の観点があります: {emphasized}（{path.name}）")
-            merged[emphasized] = replace(
-                current, weight=min(current.weight + _EMPHASIS_BONUS, _MAX_WEIGHT)
-            )
+            merged[emphasized] = replace(current, weight=min(current.weight + _EMPHASIS_BONUS, _MAX_WEIGHT))
 
     ordered = sorted(merged.values(), key=lambda c: (-c.weight, c.id))
-    return CriteriaSet(
-        industry=industry or "指定なし", reader=reader, criteria=tuple(ordered)
-    )
+    return CriteriaSet(industry=industry or "指定なし", reader=reader, criteria=tuple(ordered))

@@ -15,6 +15,7 @@ jobs:
           python-version: "3.13"
       - run: pip install -e ".[dev]"
       - run: python -m ruff check .
+      - run: python -m ruff format --check .
 
   typecheck:
     runs-on: ubuntu-latest

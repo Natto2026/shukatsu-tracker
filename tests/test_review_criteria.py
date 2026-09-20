@@ -35,18 +35,14 @@ def test_every_file_is_valid_toml(path):
         assert 1 <= int(entry.get("weight", 1)) <= 4
 
 
-@pytest.mark.parametrize(
-    "industry", [None, *criteria_module.available_industries()], ids=str
-)
+@pytest.mark.parametrize("industry", [None, *criteria_module.available_industries()], ids=str)
 def test_sent_text_never_claims_a_specific_organisation_standard(industry):
     """送られる文面に「どこかの組織の基準だ」と読める記述を混ぜない。
 
     ファイル冒頭の注記（「特定の企業の評価基準ではない」）は文面には出ないため、
     検査対象はコメントを含む生ファイルではなく、組み上がった依頼文にする。
     """
-    built = prompt_module.build(
-        ReviewRequest(question="設問", answer="回答本文", industry=industry)
-    )
+    built = prompt_module.build(ReviewRequest(question="設問", answer="回答本文", industry=industry))
     for phrase in FORBIDDEN_PHRASES:
         assert phrase not in built, f"{industry} の文面に「{phrase}」が含まれています"
 

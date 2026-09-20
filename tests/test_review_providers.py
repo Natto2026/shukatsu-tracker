@@ -108,9 +108,7 @@ class TestAnthropicProvider:
             AnthropicProvider().review(REQUEST, PROMPT)
 
     def test_missing_api_key_is_reported(self, monkeypatch):
-        monkeypatch.setitem(
-            sys.modules, "anthropic", types.SimpleNamespace(Anthropic=lambda: None)
-        )
+        monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(Anthropic=lambda: None))
         monkeypatch.delenv(API_KEY_ENV, raising=False)
         with pytest.raises(ReviewError, match=API_KEY_ENV):
             AnthropicProvider().review(REQUEST, PROMPT)
@@ -124,9 +122,7 @@ class TestAnthropicProvider:
 
 class TestExtractText:
     def test_joins_text_blocks_only(self):
-        response = FakeResponse(
-            [FakeBlock("thinking"), FakeBlock("text", "前半"), FakeBlock("text", "後半")]
-        )
+        response = FakeResponse([FakeBlock("thinking"), FakeBlock("text", "前半"), FakeBlock("text", "後半")])
         assert extract_text(response) == "前半\n後半"
 
     def test_missing_content_is_empty(self):

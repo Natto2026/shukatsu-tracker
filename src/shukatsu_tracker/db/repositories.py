@@ -18,10 +18,7 @@ from .database import Database
 from .dialects import TODAY
 
 # 志望度は文字列順だと S が末尾に来るため、意味の順（S→A→B→C）を明示する
-_PRIORITY_ORDER = (
-    "CASE priority WHEN 'S' THEN 0 WHEN 'A' THEN 1 "
-    "WHEN 'B' THEN 2 WHEN 'C' THEN 3 ELSE 4 END"
-)
+_PRIORITY_ORDER = "CASE priority WHEN 'S' THEN 0 WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 ELSE 4 END"
 
 
 class _Table:
@@ -185,13 +182,10 @@ class StepRepository(_Table):
 
 class EsAnswerRepository(_Table):
     table = "es_answers"
-    writable = frozenset(
-        {"company_id", "category", "question", "char_limit", "answer", "updated_at"}
-    )
+    writable = frozenset({"company_id", "category", "question", "char_limit", "answer", "updated_at"})
 
     _SELECT_WITH_COMPANY = (
-        "SELECT e.*, c.name AS company_name "
-        "FROM es_answers e LEFT JOIN companies c ON c.id = e.company_id"
+        "SELECT e.*, c.name AS company_name FROM es_answers e LEFT JOIN companies c ON c.id = e.company_id"
     )
 
     @staticmethod
@@ -228,9 +222,7 @@ class EsAnswerRepository(_Table):
         return None if row is None else self._to_model(row)
 
     def list_all(self) -> list[EsAnswer]:
-        rows = self._db.fetchall(
-            f"{self._SELECT_WITH_COMPANY} ORDER BY e.updated_at DESC, e.id DESC"
-        )
+        rows = self._db.fetchall(f"{self._SELECT_WITH_COMPANY} ORDER BY e.updated_at DESC, e.id DESC")
         return [self._to_model(row) for row in rows]
 
     def _today(self) -> str:
