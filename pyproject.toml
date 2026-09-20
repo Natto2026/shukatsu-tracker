@@ -38,6 +38,12 @@ check_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 
+# numpy / pandas の型スタブは 3.12 以降の構文を含み、3.11 向けの検査で構文エラーになる。
+# どちらも検査対象ではないので、import 先を追わない
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*", "pandas", "pandas.*"]
+follow_imports = "skip"
+
 [tool.ruff]
 line-length = 110
 target-version = "py311"
