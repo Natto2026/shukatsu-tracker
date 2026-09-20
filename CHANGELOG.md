@@ -19,6 +19,9 @@
 - docs/operations.md に運用手順（起動・保存先・バックアップと復旧・スキーマ更新時の挙動・困ったとき）を追加
 - mypy を dev 依存と CI に追加し、`src/` と `app.py` を型検査する（#5）。ファネルの行を入れる変数が経路別集計の変数と衝突していたのを直した
 
+### Removed
+- 使われていないコードを削除。`Dialect.in_transaction`(接続の状態で入れ子を判定する 0.6.0 で取りやめた方式の名残)、`Database.raw`、`EsAnswer.length` / `EsAnswer.over_limit`(同じ判定を `LengthCheck` が持つ)、`LengthCheck.remaining`、呼ばれていないサービスのラッパー(`SelectionService.status_of` / `pass_rates`、`ReviewService.industries_with_overlay`)
+
 ## [0.6.0] - 2026-09-17
 
 ### Fixed
