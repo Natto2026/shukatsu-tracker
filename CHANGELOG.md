@@ -23,6 +23,7 @@
 - `Dialect.in_transaction`（抽象メソッドと SQLite / PostgreSQL の実装）を削除。接続の状態でトランザクションの入れ子を判定する方式は 0.6.0 で取りやめており、呼び出し元のないまま残っていた
 - `EsAnswer.length` / `EsAnswer.over_limit` と `LengthCheck.remaining` を削除。文字数の判定は `services/es.py` の `LengthCheck` に集約してあり、モデル側の同じ判定は呼ばれていなかった
 - `SelectionService.status_of` / `SelectionService.pass_rates` を削除。呼び出し元がなく、`pass_rates` は内部でステップ一覧を取り直すため、画面が取得済みの結果を使い回す現在の呼び方より問い合わせが増える
+- `Database.raw` を削除。docstring は「方言固有の確認が必要なテストだけが使う」としていたが、使っているテストはなく、ドライバの接続を外へ出す入口だけが残っていた
 
 ## [0.6.0] - 2026-09-17
 

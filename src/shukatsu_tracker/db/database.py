@@ -106,8 +106,3 @@ class Database:
 
     def close(self) -> None:
         self._raw.close()
-
-    @property
-    def raw(self) -> Any:
-        """ドライバの接続。方言固有の確認が必要なテストだけが使う。"""
-        return self._raw
