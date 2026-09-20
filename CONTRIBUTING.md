@@ -5,7 +5,7 @@
 ## 開発フロー
 
 - main への直接コミット禁止。必ず `feature/xxx` か `fix/xxx` ブランチ → Pull Request
-- PR 前にローカルで `ruff check .` と `python -m pytest` を両方通すこと
+- PR 前にローカルで `ruff check .`・`python -m mypy`・`python -m pytest` をすべて通すこと
 - 挙動を変える修正には回帰テストを添える
 - マージ後は CHANGELOG.md の Unreleased に追記し、ブランチを削除する
 
