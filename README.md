@@ -172,7 +172,8 @@ review/（観点の定義・依頼文の組み立て・実行先）は services 
 
 詳細は [docs/architecture.md](docs/architecture.md)（レイヤー設計・永続化の方針）、
 [docs/data_flow.md](docs/data_flow.md)（データの流れ・ER 図・テーブル設計）、
-[docs/screens.md](docs/screens.md)（画面一覧と呼ぶ層）を参照してください。
+[docs/screens.md](docs/screens.md)（画面一覧と呼ぶ層）、
+[docs/operations.md](docs/operations.md)（起動・保存先・バックアップと復旧・スキーマ更新）を参照してください。
 開発規約は [CONTRIBUTING.md](CONTRIBUTING.md) にまとめています。
 
 ## 見つけた不具合と直し方
