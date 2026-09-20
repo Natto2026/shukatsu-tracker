@@ -21,6 +21,15 @@ streamlit run app.py          # http://localhost:8501 が開く
 
 `data/` は `.gitignore` 済みで、個人の選考データがリポジトリに入ることはない。
 
+## 環境変数
+
+| 変数 | 既定 | 用途 |
+|---|---|---|
+| `SHUKATSU_DB` | `data/shukatsu.db` | 保存先。SQLite のファイルパスか `postgresql://...` |
+| `ANTHROPIC_API_KEY` | なし | 設定されている場合だけ、添削の実行先に Claude API が現れる。アプリは値を読まず保存もしない（SDK が解決する） |
+| `SHUKATSU_REVIEW_MODEL` | `claude-opus-5` | 添削で Claude API に送るときのモデル名 |
+| `SHUKATSU_TEST_DSN` | なし | テストを PostgreSQL に対して走らせる場合の接続先（開発時のみ） |
+
 手元で PostgreSQL を試すときは同梱の `docker-compose.yml` を使う。待ち受けは `127.0.0.1` のみ。
 
 ```bash
