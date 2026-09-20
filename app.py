@@ -609,7 +609,7 @@ elif page == "分析":
         st.dataframe(rate_frame("test_type", "適性検査"), width="stretch", hide_index=True)
 
     st.subheader("選考ファネル")
-    rows = analytics.funnel(all_steps, constants.DEFAULT_STEPS)
+    funnel_rows = analytics.funnel(all_steps, constants.DEFAULT_STEPS)
     frame = pd.DataFrame(
         [
             {
@@ -619,7 +619,7 @@ elif page == "分析":
                 "選考中": r.in_progress,
                 "辞退": r.declined,
             }
-            for r in rows
+            for r in funnel_rows
         ]
     ).set_index("step")
     # st.bar_chart は軸を辞書順に並べてしまうため、Altair で選考順に固定する
