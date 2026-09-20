@@ -216,7 +216,7 @@ elif page == "企業管理":
 
     with st.expander("企業研究リンク（公式・事業内容・クチコミ・選考体験記）"):
         links = research.research_links(selected.name)
-        st.markdown(" / ".join(f"[{link['label']}]({link['url']})" for link in links))
+        st.markdown(" / ".join(f"[{link.label}]({link.url})" for link in links))
 
     st.markdown("#### 選考ステップ")
     st.caption("変更したら「選考ステップを保存」を押してください。押すまで保存されません。")

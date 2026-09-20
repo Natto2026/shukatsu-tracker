@@ -11,12 +11,12 @@ class TestResearchLinks:
         links = research.research_links("テスト株式会社")
         assert len(links) >= 5
         for link in links:
-            assert link["url"].startswith("https://")
-            assert " " not in link["url"]
-            assert "テスト株式会社" not in link["url"]  # URLエンコードされている
+            assert link.url.startswith("https://")
+            assert " " not in link.url
+            assert "テスト株式会社" not in link.url  # URLエンコードされている
 
     def test_covers_key_research_pages(self):
-        labels = "".join(link["label"] for link in research.research_links("A社"))
+        labels = "".join(link.label for link in research.research_links("A社"))
         for keyword in ["公式", "採用", "事業内容", "クチコミ", "選考体験記"]:
             assert keyword in labels
 
