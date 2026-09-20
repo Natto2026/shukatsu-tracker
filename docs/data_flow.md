@@ -44,6 +44,74 @@
 | `reviews` | 回答への所見の履歴 | 評価時点の本文を控える。回答削除で連動削除（CASCADE） |
 | `schema_migrations` | 適用済みスキーマの記録 | `db/migrations/*.sql` の版管理に使う |
 
+### ER 図
+
+```mermaid
+erDiagram
+    companies ||--o{ steps : "企業を消すとステップも消える"
+    companies |o--o{ es_answers : "企業を消しても回答は残る"
+    es_answers ||--o{ reviews : "回答を消すと所見も消える"
+
+    companies {
+        int id PK
+        text name UK "企業名"
+        text industry "業界"
+        text priority "志望度"
+        text route "応募経路"
+        text test_type "適性検査の種類"
+        text mypage_url "マイページ URL"
+        text login_email "登録メール"
+        text memo
+        text created_at
+    }
+    steps {
+        int id PK
+        int company_id FK
+        text name "ES・Webテスト・面接など"
+        text deadline "YYYY-MM-DD"
+        text result "選考中・通過・落選など"
+        text memo
+        int sort_order "表示順"
+    }
+    es_answers {
+        int id PK
+        int company_id FK "NULL なら汎用の回答"
+        text category "設問の分類"
+        text question "設問"
+        int char_limit "文字数制限"
+        text answer "回答本文"
+        text updated_at
+    }
+    reviews {
+        int id PK
+        int es_answer_id FK
+        text industry "点検時の業界"
+        text provider "実行先"
+        text model
+        text prompt "組み立てた依頼文"
+        text result "所見"
+        text answer_snapshot "点検した時点の本文"
+        text created_at
+    }
+    schema_migrations {
+        int version PK
+        text name
+        text applied_at
+    }
+```
+
+パスワード列がどこにもないのは設計上の意図（[README のセキュリティ方針](../README.md#データの扱いセキュリティ方針)）。
+`reviews.answer_snapshot` を持つのは、回答が後から書き換わっても「どの文面への所見か」を辿れるようにするため。
+
+### 索引
+
+| 索引 | 列 | 使う場面 |
+|---|---|---|
+| `idx_steps_company` | `steps(company_id, sort_order, id)` | 企業ごとのステップ一覧（表示順つき） |
+| `idx_steps_deadline` | `steps(deadline)`、NULL を除く | ダッシュボードの締切一覧 |
+| `idx_es_answers_company` | `es_answers(company_id)` | 企業に紐付く回答の一覧 |
+| `idx_reviews_answer` | `reviews(es_answer_id, id DESC)` | 回答ごとの所見履歴（新しい順） |
+
 ## 型の流れ
 
 | 型 | 生まれる場所 | 使う場所 |
