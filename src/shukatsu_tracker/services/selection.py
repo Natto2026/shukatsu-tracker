@@ -12,7 +12,7 @@ from datetime import date
 
 from .. import analytics, constants
 from ..db import CompanyRepository, Database, StepRepository, transaction
-from ..models import Company, Deadline, FunnelRow, PassRate, Step, StepView
+from ..models import Company, Deadline, FunnelRow, Step, StepView
 
 
 class _Unset:
@@ -168,9 +168,6 @@ class SelectionService:
 
     # --- 集計 ---------------------------------------------------------
 
-    def status_of(self, company_id: int) -> str:
-        return analytics.company_status(self.steps_by_company().get(company_id, []))
-
     def dashboard(self, today: date, *, within_days: int = 7) -> DashboardSummary:
         """画面1枚ぶんの情報を、テーブルごとに1回ずつの問い合わせで集める。"""
         grouped = self.steps_by_company()
@@ -185,9 +182,6 @@ class SelectionService:
             active_companies=active,
             deadlines=analytics.upcoming_deadlines(all_steps, today, within_days=within_days),
         )
-
-    def pass_rates(self, attribute: str, *, step_name: str | None = None) -> list[PassRate]:
-        return analytics.pass_rate_by(self.all_step_views(), attribute, step_name=step_name)
 
     def funnel(self) -> list[FunnelRow]:
         return analytics.funnel(self.all_step_views(), constants.DEFAULT_STEPS)
