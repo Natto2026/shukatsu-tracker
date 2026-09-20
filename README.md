@@ -170,8 +170,9 @@ review/（観点の定義・依頼文の組み立て・実行先）は services 
 含めていて、別の場所で更新があった場合は古い表示のまま上書きしません。保存時にも
 表示した時点の値と突き合わせ、ずれていればその行を書かずに知らせます。
 
-詳細は [docs/architecture.md](docs/architecture.md)（レイヤー設計・永続化の方針）と
-[docs/data_flow.md](docs/data_flow.md)（データの流れ・テーブル設計）を参照してください。
+詳細は [docs/architecture.md](docs/architecture.md)（レイヤー設計・永続化の方針）、
+[docs/data_flow.md](docs/data_flow.md)（データの流れ・ER 図・テーブル設計）、
+[docs/screens.md](docs/screens.md)（画面一覧と呼ぶ層）を参照してください。
 開発規約は [CONTRIBUTING.md](CONTRIBUTING.md) にまとめています。
 
 ## 見つけた不具合と直し方
