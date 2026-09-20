@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.6"]
+dev = ["pytest>=8.0", "ruff>=0.6", "mypy>=1.10"]
 # 通信する評価先を使う場合だけ必要。既定の書き出しのみなら不要。
 llm = ["anthropic>=1.0"]
 # サーバー型の DB を使う場合だけ必要。既定の SQLite なら不要。
@@ -27,6 +27,17 @@ shukatsu_tracker = ["db/migrations/*.sql", "review/criteria/*.toml", "review/cri
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mypy]
+# 対象バージョンは固定しない（実行している Python に合わせる）。
+# 3.11 に固定すると、numpy の型スタブが含む 3.12 以降の構文で検査が止まるため。
+files = ["src", "app.py"]
+# streamlit / pandas / psycopg は型スタブが揃っていないため、未解決の import は無視する
+ignore_missing_imports = true
+# 型注釈のない関数の中身も検査する（注釈漏れで検査が素通りしないように）
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
 
 [tool.ruff]
 line-length = 110
