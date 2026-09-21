@@ -20,5 +20,13 @@ class ForeignKeyError(DatabaseError):
     """存在しない行を参照した、または参照されている行を消そうとした。"""
 
 
+class ConnectionFailedError(DatabaseError):
+    """接続できなかった（未対応の接続先・依存の不足・ファイルやサーバーに届かない）。
+
+    文面にドライバのメッセージを含めない。接続先のホスト名や利用者名が
+    そのまま画面に出るため。元の例外は原因として連鎖させておく。
+    """
+
+
 class MigrationError(DatabaseError):
     """スキーマの適用に失敗した。どのファイルで失敗したかを文面に含める。"""

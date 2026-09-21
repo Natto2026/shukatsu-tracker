@@ -65,9 +65,7 @@ def test_history_is_newest_first(reviewer, saved_answer):
     first = reviewer.run(saved_answer, provider=StubProvider("1回目"))
     second = reviewer.run(saved_answer, provider=StubProvider("2回目"))
     assert [r.id for r in reviewer.history(saved_answer.id or -1)] == [second.id, first.id]
-    latest = reviewer.latest(saved_answer.id or -1)
-    assert latest is not None
-    assert latest.result == "2回目"
+    assert reviewer.history(saved_answer.id or -1)[0].result == "2回目"
 
 
 def test_unsaved_answer_is_rejected(reviewer):

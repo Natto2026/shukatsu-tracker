@@ -55,9 +55,14 @@ class ReviewRequest:
         return len(self.answer)
 
 
+def _inline(text: str) -> str:
+    """1行に収める。改行を含む入力が、続きの行で見出しや指示として読まれないようにする。"""
+    return text.replace("\r", " ").replace("\n", " ").strip()
+
+
 def _cell(text: str) -> str:
     """表のセルに入れる。改行と縦棒は列の区切りを壊すため置き換える。"""
-    return text.replace("\n", " ").replace("|", "／").strip()
+    return _inline(text).replace("|", "／")
 
 
 def _fence_for(text: str) -> str:
@@ -82,9 +87,9 @@ def _criteria_table(criteria: CriteriaSet) -> str:
 def _target_block(request: ReviewRequest) -> str:
     lines = ["## 評価の対象", ""]
     if request.company_name:
-        lines.append(f"- 提出先: {request.company_name}")
+        lines.append(f"- 提出先: {_inline(request.company_name)}")
     lines.append(f"- 応募業界: {request.industry or '指定なし'}")
-    lines.append(f"- 設問: {request.question}")
+    lines.append(f"- 設問: {_inline(request.question)}")
     if request.char_limit:
         lines.append(f"- 文字数: {request.length} / {request.char_limit}（制限あり）")
     else:

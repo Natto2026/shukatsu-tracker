@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from .errors import DuplicateKeyError, ForeignKeyError
+from .errors import ConnectionFailedError, DuplicateKeyError, ForeignKeyError
 
 # マイグレーションの SQL 中で方言差を吸収するための差し込み記号
 PK = "{{PK}}"
@@ -28,10 +28,11 @@ class Dialect(ABC):
     name: str
     placeholder: str
     supports_returning: bool
+    begin_sql: str = "BEGIN"
 
     @abstractmethod
     def connect(self, target: str) -> Any:
-        """ドライバの接続を開いて返す。"""
+        """ドライバの接続を開いて返す。開けなければ ConnectionFailedError。"""
 
     @abstractmethod
     def substitutions(self) -> dict[str, str]:
@@ -56,20 +57,29 @@ class SqliteDialect(Dialect):
     name = "sqlite"
     placeholder = "?"
     supports_returning = False
+    # 境界は書き込みにしか使わないので、開始時に書き込みロックを取る。既定の
+    # BEGIN（DEFERRED）だと、境界の中で読んでから書く間に別の接続が書き込めてしまい、
+    # そのあとの自分の書き込みは待たされずに「database is locked」で失敗する。
+    begin_sql = "BEGIN IMMEDIATE"
 
     def connect(self, target: str) -> sqlite3.Connection:
         path = Path(target)
-        if str(path.parent) not in ("", "."):
-            path.parent.mkdir(parents=True, exist_ok=True)
-        # Streamlit はセッションごとに別スレッドで動くため、接続は
-        # セッション単位で作る前提で check_same_thread を外す。
-        # isolation_level=None で暗黙トランザクションを切り、開始と終了は
-        # transactions.transaction() だけが発行する。
-        raw = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
-        raw.row_factory = sqlite3.Row
-        raw.execute("PRAGMA foreign_keys = ON")
-        raw.execute("PRAGMA journal_mode = WAL")
-        raw.execute("PRAGMA busy_timeout = 5000")
+        try:
+            if str(path.parent) not in ("", "."):
+                path.parent.mkdir(parents=True, exist_ok=True)
+            # Streamlit はセッションごとに別スレッドで動くため、接続は
+            # セッション単位で作る前提で check_same_thread を外す。
+            # isolation_level=None で暗黙トランザクションを切り、開始と終了は
+            # transactions.transaction() だけが発行する。
+            raw = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
+            raw.row_factory = sqlite3.Row
+            raw.execute("PRAGMA foreign_keys = ON")
+            raw.execute("PRAGMA journal_mode = WAL")
+            raw.execute("PRAGMA busy_timeout = 5000")
+        except (sqlite3.Error, OSError) as error:
+            raise ConnectionFailedError(
+                "SQLite のファイルを開けませんでした。保存先のパスと書き込み権限を確認してください"
+            ) from error
         return raw
 
     def substitutions(self) -> dict[str, str]:
@@ -97,21 +107,24 @@ class PostgresDialect(Dialect):
     placeholder = "%s"
     supports_returning = True
 
-    def __init__(self, dsn: str) -> None:
-        self.dsn = dsn
-
     def connect(self, target: str) -> Any:
         try:
             import psycopg
             from psycopg.rows import dict_row
         except ImportError as error:
-            raise RuntimeError(
+            raise ConnectionFailedError(
                 'PostgreSQL を使うには追加の依存が必要です: pip install -e ".[postgres]"'
             ) from error
         # autocommit=True にして、開始と終了を transaction() だけが発行する形に
         # そろえる（SQLite 側と同じ扱いにするため）。
-        raw = psycopg.connect(target, autocommit=True, row_factory=dict_row)
-        raw.execute("SET client_encoding TO 'UTF8'")
+        try:
+            raw = psycopg.connect(target, autocommit=True, row_factory=dict_row)
+            raw.execute("SET client_encoding TO 'UTF8'")
+        except psycopg.Error as error:
+            raise ConnectionFailedError(
+                "PostgreSQL に接続できませんでした。サーバーが起動しているか、"
+                "接続文字列（ホスト・ポート・利用者名・パスワード・DB 名）を確認してください"
+            ) from error
         return raw
 
     def substitutions(self) -> dict[str, str]:
@@ -158,7 +171,7 @@ def resolve(target: str | Path) -> tuple[Dialect, str]:
     text = str(target)
     parsed = urlparse(text)
     if parsed.scheme in ("postgresql", "postgres"):
-        return PostgresDialect(text), text
+        return PostgresDialect(), text
     if parsed.scheme == "sqlite":
         # sqlite:///relative/path.db と sqlite:////abs/path.db の両方を許す
         return SqliteDialect(), parsed.path.lstrip("/") or parsed.netloc

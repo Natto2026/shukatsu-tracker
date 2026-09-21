@@ -6,6 +6,40 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-21
+
+### Added
+- スプレッドシートから書き出した CSV の取り込み（#8）。「取り込み」の画面で CSV を選ぶと、企業と選考ステップをまとめて登録できる
+  - 1行 = 選考ステップ1件の縦持ち。列は見出し名で対応づけ、日本語の別名（会社名・締切日・選考結果など）を受ける。文字コードは UTF-8（BOM あり・なし）と Shift-JIS
+  - 書き込む前に要約（追加される企業とステップの数、取り込まない行と理由、取り込まない列）を出し、押されたときに1つのトランザクションで書く。途中で失敗したら何も残らない。要約のあとで登録内容が変わっていたら、書かずに要約を出し直す
+  - 読めない締切や選択肢にない値を、空欄や既定値に置き換えて取り込むことはしない。行番号と理由を出す。問題のある行を含む企業は丸ごと取り込まない（登録済みの企業は上書きしないため、半分だけ入れると直した CSV で残りを入れられなくなる）
+  - 認証情報に当たる列（マイページURL・ログインID・メール・パスワードなど）は値を読まない。読まなかった列は画面に出す
+  - 解析は `services/csv_import.py` の `parse_csv`（DB にも画面にも触れない）。見本は `docs/sample_import.csv`（架空の企業）
+
+### Changed
+- README の「現在の利用状況」を更新。CSV の取り込みは入ったが、作者自身のデータの移行はまだ行っていない
+- メニューに「取り込み」が増えたため、スクリーンショットを撮り直した
+- scripts/demo_data.py の研究内容のサンプル文を、実在の研究を連想させない架空の題材に差し替えた（デモデータは内容もすべて架空にする）
+- `pyproject.toml` に `readme`・`license`(MIT)・`license-files`・`authors` を追加。SPDX 形式の `license` に合わせて、ビルドに使う setuptools の下限を 77 に引き上げた
+- `# pragma: no cover` を付けていながら網羅率を計測する設定がなかったため、`pytest-cov` を dev 依存に、coverage の設定を pyproject.toml に追加。CI の SQLite のテストで網羅率を出力する（記録のみで、しきい値では落とさない）
+- CONTRIBUTING.md のブランチ運用に、適用範囲(0.7.0 から。それ以前の PR は main 向き)と、1人の開発でこの運用を置いている理由を追記。Issue 番号をブランチ名に入れるのは対応する Issue がある場合、と明記した
+- 文書の取り残しを実装と規約に合わせた。docs/architecture.md の開発フロー（develop／release の流れ）と構成ツリー（`scripts/capture_screenshots.py`）、CONTRIBUTING.md のスクリーンショット更新手順（自動撮影スクリプト）、README の finance.toml 抜粋の `emphasis`・SQL を書く場所の説明・`SHUKATSU_REVIEW_MODEL` の既定値、docs/data_flow.md の書き出しの説明
+- ES管理の絞り込みを `EsService.search` に戻した。画面が同じ判定（カテゴリとキーワード）を自前で持っており、「UI にロジックを書かない」という規約とサービス層の検索の両方から外れていた
+- `streamlit` の下限を 1.36 から 1.51 に引き上げ。`width="stretch"` を st.dataframe(1.49 から対応)と st.altair_chart(1.51 から対応)に渡しており、宣言していた下限では動かなかった
+- README に現在の利用状況を明記。作者自身の選考管理は今もスプレッドシートで、このアプリは移行経路(#8)ができるまで使っていない。スプレッドシートの課題の話がアプリの運用実績に読めていた。docs/operations.md も題を「起動と保守の手引き」に改め、運用実績を前提にしない書き方にした
+
+### Fixed
+- 画面の表記を揃えた。メニュー「添削」とページの題「回答への所見」の不一致、分析ページの表の見出しが `step` のままだった点、選考ファネルの Y 軸で長いステップ名が「…」で切れていた点。スクリーンショット（添削・分析）も撮り直した
+- `SelectionService.add_step` が、並び順を決める読み取りをトランザクションの外で行っていた。読み取りを境界の中へ移し、SQLite では境界の開始を `BEGIN IMMEDIATE` にした。境界は書き込みにしか使っておらず、既定の `BEGIN` のままだと、中で読んでから書くまでの間に別の接続が書き込めてしまう
+- 利用者が入れた文字列が Markdown として解釈される箇所が残っていた。企業の削除確認のチェック、ES管理の回答の見出し、追加・削除の通知でエスケープし、依頼文では設問と提出先を1行に収める（改行を含む入力が見出しや指示として割り込めないように）
+- 接続に失敗すると画面に生のトレースバックが出ていた。psycopg が未導入（RuntimeError）、未対応の接続先（ValueError）、届かない PostgreSQL や開けない SQLite ファイル（ドライバの例外）を、永続化層で共通の `ConnectionFailedError` に翻訳する。文面には接続先のホスト名や利用者名を含めない
+- 古いタブから選考ステップを保存すると、入力が黙って捨てられ「変更はありませんでした。」と表示されていた。保存時の再実行で入力欄が最新の値で作り直されるため、衝突を知らせる分岐には到達していなかった。表示した値を入力欄とは別に控え、表示後に他の場所で更新された行は入力を反映しなかったことを警告する。新しい値を上書きしない点は従来どおり。README・docs の説明も実際の挙動に合わせた
+- README と docs/architecture.md が「外部送信ゼロ」「アプリは通信しない」と言い切っていたのを、実装に合わせて「既定では通信しない」に修正。データが端末の外に出る2つの場合（添削の実行先に Claude API を選んだとき／`SHUKATSU_DB` を別ホストの PostgreSQL に向けたとき）をセキュリティ方針に明記した
+
+### Removed
+- 呼び出し元のないコードを削除: `SelectionService.funnel`（画面と書き出しは `analytics.funnel` を直接呼ぶ）、`StepRepository.get`、`PostgresDialect` が保持するだけで使わない `dsn`
+- テストからしか呼ばれていなかったものを削除: `ReviewService.latest` と `ReviewRepository.latest_for_answer`（履歴の先頭と同じ）、`ReviewResult.sent_externally`（実行先の `sends_data_externally` と重複）、`CriteriaSet.ids`。テストは残した入口で同じことを確かめる
+
 ## [0.7.0] - 2026-09-21
 
 ### Fixed
@@ -141,7 +175,8 @@
 - 初版: ダッシュボード(締切アラート)・企業管理・ES設問ライブラリ・通過率分析
 - SQLite ローカル保存(パスワード非保存方針)、pytest によるテスト、GitHub Actions CI
 
-[Unreleased]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.4.0...v0.5.0

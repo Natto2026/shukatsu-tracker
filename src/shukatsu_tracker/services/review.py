@@ -109,9 +109,6 @@ class ReviewService:
     def history(self, es_answer_id: int) -> list[Review]:
         return self._reviews.list_for_answer(es_answer_id)
 
-    def latest(self, es_answer_id: int) -> Review | None:
-        return self._reviews.latest_for_answer(es_answer_id)
-
     def delete(self, review_id: int) -> None:
         with transaction(self._db):
             self._reviews.delete(review_id)
