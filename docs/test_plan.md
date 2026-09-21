@@ -102,6 +102,7 @@
 | 古い表示への入力は反映せず、そのことを知らせる。更新されていない行の編集は通す。最新の表示からの保存では警告しない | `test_a_stale_tab_is_told_that_its_edit_was_not_saved`、`test_an_edit_on_an_untouched_row_is_still_saved_from_a_stale_tab`、`test_saving_a_fresh_tab_does_not_warn` |
 | 入力エラーは例外ではなく文面で出る | `test_duplicate_company_name_shows_a_message_not_a_traceback`、`test_blank_company_name_is_reported` |
 | ES管理の絞り込みが効く（判定はサービス層の検索） | `test_keyword_narrows_the_list` |
+| 利用者が入れた文字列を、ラベルや通知で Markdown として解釈させない | `TestUserTextIsNotMarkdown` |
 | 削除は確認しないと押せない。確認すれば消える | `test_delete_is_disabled_until_confirmed`、`test_delete_works_once_confirmed` |
 | セッションごとに接続を持ち、別接続から書き込みが見える | `test_each_session_opens_its_own_connection`、`test_write_through_the_app_is_visible_to_another_connection` |
 | 保存先の表示にパスワードや絶対パスが出ない | `TestTargetIsNotLeaked` |
@@ -125,6 +126,7 @@
 | 未知の業界・業界なしでも共通観点で動く | `test_unknown_industry_falls_back_to_base_only`、`test_none_industry_is_accepted` |
 | 観点は重みの順に並ぶ | `test_criteria_are_ordered_by_weight` |
 | 依頼文に本文・文字数・全観点が入り、業界で変わる | `test_contains_the_target`、`test_reports_length_without_a_limit`、`test_lists_every_criterion`、`test_industry_changes_the_criteria_shown` |
+| 設問と提出先は1行に収まり、改行で見出しや指示を差し込めない | `test_question_and_company_cannot_start_a_new_line` |
 | 補足は与えたときだけ入る。複数行の観点で表が崩れない。空入力は拒否。事実の捏造を禁じる指示が入る | `test_note_is_included_only_when_given`、`test_multiline_criteria_do_not_break_the_table`、`test_empty_input_is_rejected`、`test_system_prompt_forbids_inventing_facts` |
 | 既定の実行先は依頼文をそのまま返し、通信しないと宣言する | `test_returns_the_prompt_unchanged`、`test_declares_that_it_does_not_send_data` |
 | API の実行先は送信内容・拒否・空応答・依存やキーの欠如を扱える | `TestAnthropicProvider`、`TestExtractText` |
