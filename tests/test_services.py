@@ -7,7 +7,7 @@ from datetime import date, timedelta
 import pytest
 
 from shukatsu_tracker import constants
-from shukatsu_tracker.db import DuplicateKeyError
+from shukatsu_tracker.db import DuplicateKeyError, StepRepository
 from shukatsu_tracker.models import Company, EsAnswer
 
 
@@ -72,6 +72,20 @@ class TestSteps:
         step_id = selection.steps_of(company_id)[0].id or -1
         selection.update_step(step_id)
         assert selection.steps_of(company_id)[0].result == "選考中"
+
+    def test_add_step_reads_the_order_inside_the_transaction(self, conn, selection, monkeypatch):
+        """並び順を決める読み取りが、書き込みと同じ境界の中で行われること。"""
+        company_id = selection.add_company(Company(name="テスト株式会社"), with_default_steps=False)
+        depths: list[int] = []
+        original = StepRepository.list_for_company
+
+        def spy(repository, target_id):
+            depths.append(conn.depth)
+            return original(repository, target_id)
+
+        monkeypatch.setattr(StepRepository, "list_for_company", spy)
+        selection.add_step(company_id, "リクルーター面談")
+        assert depths == [1]
 
 
 class TestDashboard:
