@@ -446,7 +446,7 @@ elif page == "ES管理":
 # --- 添削 ----------------------------------------------------------------
 
 elif page == "添削":
-    st.title("回答への所見")
+    st.title("添削")
     st.caption(
         "保存した回答を、書き方の観点から点検します。観点は"
         " shukatsu_tracker/review/criteria/ の TOML で定義していて、自由に足せます。"
@@ -584,7 +584,7 @@ elif page == "分析":
     frame = pd.DataFrame(
         [
             {
-                "step": r.step,
+                "選考ステップ": r.step,
                 "通過": r.passed,
                 "落選": r.failed,
                 "選考中": r.in_progress,
@@ -592,14 +592,15 @@ elif page == "分析":
             }
             for r in funnel_rows
         ]
-    ).set_index("step")
+    ).set_index("選考ステップ")
     # st.bar_chart は軸を辞書順に並べてしまうため、Altair で選考順に固定する
-    melted = frame.reset_index().melt("step", var_name="結果", value_name="件数")
+    melted = frame.reset_index().melt("選考ステップ", var_name="結果", value_name="件数")
     chart = (
         alt.Chart(melted)
         .mark_bar()
         .encode(
-            y=alt.Y("step", sort=list(frame.index), title=None),
+            # labelLimit=0 で上限を外す。既定の幅では長いステップ名が「…」で切れる
+            y=alt.Y("選考ステップ", sort=list(frame.index), title=None, axis=alt.Axis(labelLimit=0)),
             x=alt.X("件数", title="件数", axis=alt.Axis(tickMinStep=1, format="d")),
             color=alt.Color(
                 "結果",
