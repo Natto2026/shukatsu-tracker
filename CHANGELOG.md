@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- README と docs/architecture.md が「外部送信ゼロ」「アプリは通信しない」と言い切っていたのを、実装に合わせて「既定では通信しない」に修正。データが端末の外に出る2つの場合（添削の実行先に Claude API を選んだとき／`SHUKATSU_DB` を別ホストの PostgreSQL に向けたとき）をセキュリティ方針に明記した
+
 ## [0.7.0] - 2026-09-21
 
 ### Fixed
