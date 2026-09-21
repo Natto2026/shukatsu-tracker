@@ -102,9 +102,6 @@ class PostgresDialect(Dialect):
     placeholder = "%s"
     supports_returning = True
 
-    def __init__(self, dsn: str) -> None:
-        self.dsn = dsn
-
     def connect(self, target: str) -> Any:
         try:
             import psycopg
@@ -169,7 +166,7 @@ def resolve(target: str | Path) -> tuple[Dialect, str]:
     text = str(target)
     parsed = urlparse(text)
     if parsed.scheme in ("postgresql", "postgres"):
-        return PostgresDialect(text), text
+        return PostgresDialect(), text
     if parsed.scheme == "sqlite":
         # sqlite:///relative/path.db と sqlite:////abs/path.db の両方を許す
         return SqliteDialect(), parsed.path.lstrip("/") or parsed.netloc

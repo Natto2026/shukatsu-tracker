@@ -159,10 +159,6 @@ class StepRepository(_Table):
     def update(self, step_id: int, **fields: Any) -> None:
         self._update(step_id, fields)
 
-    def get(self, step_id: int) -> Step | None:
-        row = self._db.fetchone("SELECT * FROM steps WHERE id = ?", (step_id,))
-        return None if row is None else self._to_model(row)
-
     def list_for_company(self, company_id: int) -> list[Step]:
         rows = self._db.fetchall(
             "SELECT * FROM steps WHERE company_id = ? ORDER BY sort_order, id",
@@ -283,7 +279,3 @@ class ReviewRepository(_Table):
             (es_answer_id,),
         )
         return [self._to_model(row) for row in rows]
-
-    def latest_for_answer(self, es_answer_id: int) -> Review | None:
-        rows = self.list_for_answer(es_answer_id)
-        return rows[0] if rows else None

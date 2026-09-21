@@ -400,13 +400,7 @@ elif page == "ES管理":
     c1, c2 = st.columns(2)
     filter_categories = c1.multiselect("カテゴリで絞り込み", constants.ES_CATEGORIES)
     keyword = c2.text_input("キーワード検索（設問・回答）")
-    needle = keyword.strip()
-    shown = [
-        answer
-        for answer in all_answers
-        if (not filter_categories or answer.category in filter_categories)
-        and (not needle or needle in answer.question or needle in answer.answer)
-    ]
+    shown = es.search(categories=filter_categories, keyword=keyword)
     st.caption(f"{len(shown)} / {len(all_answers)} 件")
 
     for answer in shown:

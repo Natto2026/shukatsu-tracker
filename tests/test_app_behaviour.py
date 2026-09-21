@@ -14,8 +14,8 @@ from streamlit.testing.v1 import AppTest
 
 from shukatsu_tracker import db
 from shukatsu_tracker.db import transaction
-from shukatsu_tracker.models import Company
-from shukatsu_tracker.services import SelectionService
+from shukatsu_tracker.models import Company, EsAnswer
+from shukatsu_tracker.services import EsService, SelectionService
 
 APP_PATH = str(Path(__file__).parent.parent / "app.py")
 
@@ -221,6 +221,27 @@ class TestDestructiveActionsNeedConfirmation:
             assert SelectionService(database).company(company_id) is None
         finally:
             database.close()
+
+
+class TestEsLibraryFilter:
+    def test_keyword_narrows_the_list(self, app_db):
+        """絞り込みはサービス層の検索を通ること（画面に同じ判定を持たない）。"""
+        database = open_db(app_db)
+        try:
+            es = EsService(database)
+            es.add(EsAnswer(question="学生時代に力を入れたこと", category="ガクチカ", answer="大会の運営"))
+            es.add(EsAnswer(question="志望動機", category="志望動機", answer="事業に関心がある"))
+        finally:
+            database.close()
+
+        at = open_page(app_db, "ES管理")
+        assert any("2 / 2 件" in c.value for c in at.caption)
+
+        [i for i in at.text_input if i.label.startswith("キーワード検索")][0].set_value("運営").run()
+        assert not at.exception, at.exception
+        assert any("1 / 2 件" in c.value for c in at.caption)
+        assert [e.label for e in at.expander if "ガクチカ" in e.label]
+        assert not [e.label for e in at.expander if "志望動機" in e.label]
 
 
 class TestConnectionScope:
