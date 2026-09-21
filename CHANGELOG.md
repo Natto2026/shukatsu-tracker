@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-21
+
 ### Added
 - スプレッドシートから書き出した CSV の取り込み（#8）。「取り込み」の画面で CSV を選ぶと、企業と選考ステップをまとめて登録できる
   - 1行 = 選考ステップ1件の縦持ち。列は見出し名で対応づけ、日本語の別名（会社名・締切日・選考結果など）を受ける。文字コードは UTF-8（BOM あり・なし）と Shift-JIS
@@ -173,7 +175,8 @@
 - 初版: ダッシュボード(締切アラート)・企業管理・ES設問ライブラリ・通過率分析
 - SQLite ローカル保存(パスワード非保存方針)、pytest によるテスト、GitHub Actions CI
 
-[Unreleased]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.4.0...v0.5.0
