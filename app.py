@@ -27,7 +27,14 @@ from shukatsu_tracker.db import DatabaseError, DuplicateKeyError
 from shukatsu_tracker.models import Company, EsAnswer
 from shukatsu_tracker.review import ReviewError
 from shukatsu_tracker.review.providers import available_providers
-from shukatsu_tracker.services import EsService, ReviewService, SelectionService
+from shukatsu_tracker.services import (
+    CsvFormatError,
+    CsvImportService,
+    EsService,
+    ReviewService,
+    SelectionService,
+    csv_import,
+)
 
 DEFAULT_DB = Path(__file__).parent / "data" / "shukatsu.db"
 DB_TARGET = os.environ.get("SHUKATSU_DB", str(DEFAULT_DB))
@@ -89,8 +96,11 @@ except DatabaseError as error:
 selection = SelectionService(database)
 es = EsService(database)
 reviewer = ReviewService(database)
+importer = CsvImportService(database)
 
-page = st.sidebar.radio("メニュー", ["ダッシュボード", "企業管理", "ES管理", "添削", "分析", "書き出し"])
+page = st.sidebar.radio(
+    "メニュー", ["ダッシュボード", "企業管理", "ES管理", "添削", "分析", "取り込み", "書き出し"]
+)
 st.sidebar.caption(f"保存先: {db.describe(DB_TARGET, base=Path(__file__).parent)}")
 show_flash()
 
@@ -614,6 +624,153 @@ elif page == "分析":
     )
     st.altair_chart(chart, width="stretch")
     st.dataframe(frame, width="stretch")
+
+
+# --- 取り込み ------------------------------------------------------------
+
+elif page == "取り込み":
+    st.title("CSV の取り込み")
+    st.markdown(
+        """スプレッドシートから書き出した CSV を読み込み、企業と選考ステップをまとめて登録します。
+
+- 1行目は見出し、2行目以降は **1行 = 選考ステップ1件**。同じ企業名の行は1社にまとまります
+- ファイルを選ぶと、何が取り込まれるかの要約を表示します。**「この内容で取り込む」を押すまで保存されません**
+- 登録済みの企業は上書きしません。問題のある行は、行番号と理由をつけて表示します
+- 企業のどれかの行に問題があれば、その企業は丸ごと取り込みません（CSV を直して、もう一度取り込めます）
+- マイページURL・ログインID・パスワードなど、認証情報に当たる列は取り込みません"""
+    )
+    with st.expander("受け付ける列"):
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "見出し": guide.header,
+                        "必須": "必須" if guide.required else "",
+                        "別名": "、".join(guide.aliases),
+                        "内容": guide.note,
+                    }
+                    for guide in csv_import.column_guide()
+                ]
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+        st.caption(
+            "文字コードは UTF-8 と Shift-JIS（Excel の「CSV (コンマ区切り)」）のどちらでも読めます。"
+            "業界などの選択肢の列は、空欄なら企業の追加フォームと同じ既定値になります。"
+        )
+
+    # 取り込みが済んだら key を変えて、選択済みのファイルを外す
+    uploaded = st.file_uploader(
+        "CSV ファイル", type=["csv"], key=f"import_file:{st.session_state.get('import_round', 0)}"
+    )
+    if uploaded is None:
+        st.session_state.pop("import_shown", None)
+        st.stop()
+
+    try:
+        plan = importer.preview(uploaded.getvalue())
+    except CsvFormatError as error:
+        st.session_state.pop("import_shown", None)
+        st.error(as_text(str(error)))
+        st.stop()
+    except DatabaseError as error:
+        st.session_state.pop("import_shown", None)
+        st.error(f"登録済みの企業を確認できませんでした: {error}")
+        st.stop()
+
+    # 前回この画面に出した要約を控えておく。押した時点で見えていた内容と、
+    # いま作り直した内容がずれていたら書き込まない（企業管理の保存と同じ考え方）。
+    summary_shown = st.session_state.get("import_shown")
+    st.session_state["import_shown"] = plan
+
+    st.subheader("取り込みの要約")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("追加される企業", f"{len(plan.companies)} 社")
+    m2.metric("追加されるステップ", f"{plan.step_count} 件")
+    m3.metric("取り込まない行", f"{len(plan.skipped)} 行")
+    notes = [f"文字コード: {plan.encoding}"]
+    if plan.blank_rows:
+        notes.append(f"空行 {plan.blank_rows} 行は読み飛ばしました")
+    st.caption(" / ".join(notes))
+
+    if plan.skipped:
+        st.markdown("#### 取り込まない行と理由")
+        st.dataframe(
+            pd.DataFrame(
+                [{"行": row.line, "企業名": row.company_name, "理由": row.reason} for row in plan.skipped]
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+    if plan.ignored_columns:
+        st.markdown("#### 取り込まない列")
+        st.dataframe(
+            pd.DataFrame([{"見出し": c.header, "理由": c.reason} for c in plan.ignored_columns]),
+            width="stretch",
+            hide_index=True,
+        )
+
+    if not plan.companies:
+        st.info("取り込める企業がありません。")
+        st.stop()
+
+    st.markdown("#### 追加される企業")
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "行": planned.line,
+                    "企業名": planned.company.name,
+                    "業界": planned.company.industry,
+                    "志望度": planned.company.priority,
+                    "応募経路": planned.company.route,
+                    "適性検査": planned.company.test_type,
+                    "ステップ数": len(planned.steps),
+                }
+                for planned in plan.companies
+            ]
+        ),
+        width="stretch",
+        hide_index=True,
+    )
+    with st.expander("追加されるステップ"):
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "行": step.line,
+                        "企業名": planned.company.name,
+                        "ステップ": step.name,
+                        "締切": step.deadline or "",
+                        "結果": step.result,
+                    }
+                    for planned in plan.companies
+                    for step in planned.steps
+                ]
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+
+    if st.button("この内容で取り込む", type="primary"):
+        if summary_shown != plan:
+            st.warning(
+                "表示後に登録内容が変わったため、取り込みは行っていません。"
+                "上の要約を確認してから、もう一度押してください。"
+            )
+        else:
+            try:
+                result = importer.apply(plan)
+            except DuplicateKeyError as error:
+                st.error(f"取り込みは行っていません（何も保存されていません）。{as_text(str(error))}")
+            except DatabaseError as error:
+                st.error(f"取り込めませんでした（何も保存されていません）: {error}")
+            else:
+                flash(f"{result.companies} 社・{result.steps} 件のステップを取り込みました。")
+                st.session_state["import_round"] = st.session_state.get("import_round", 0) + 1
+                st.session_state.pop("import_shown", None)
+                st.rerun()
 
 
 # --- 書き出し ------------------------------------------------------------

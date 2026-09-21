@@ -28,6 +28,7 @@ shukatsu-tracker/
 │       │   └── providers.py      # 実行先（既定は通信しない書き出しのみ）
 │       └── services/             # ユースケース層（UI が呼ぶ入口）
 │           ├── selection.py      # 企業・選考ステップの操作と集計の取りまとめ
+│           ├── csv_import.py     # CSV の解析（DB に触れない）と、確認後の一括登録
 │           ├── es.py             # 設問・回答の保存と検索
 │           └── review.py         # 所見を取る順序の固定と履歴の保存
 ├── scripts/
@@ -48,6 +49,7 @@ flowchart TB
     UI["app.py<br>(Streamlit UI)"]
     subgraph services["services/（ユースケース層）"]
         SEL["selection.py"]
+        IMP["csv_import.py"]
         ES["es.py"]
         RV["review.py"]
     end
@@ -69,6 +71,7 @@ flowchart TB
     SQL[("保存先<br>SQLite または PostgreSQL")]
 
     UI --> SEL
+    UI --> IMP
     UI --> ES
     UI --> RV
     UI --> EX
@@ -79,6 +82,8 @@ flowchart TB
     RV --> REPO
     SEL --> AN
     SEL --> REPO
+    IMP --> AN
+    IMP --> REPO
     ES --> REPO
     REPO --> DBF
     DBF --> TX
@@ -113,6 +118,9 @@ flowchart TB
 - **利用者の入力を Markdown として解釈しない。** 企業名・メモ・URL は表示前に
   エスケープする。URL は scheme を確認してからリンクにする。
 - **破壊的な操作には確認を挟む。** 何が失われるかを書いたうえで、確認してから実行する。
+- **まとめて書く操作は、先に結果を見せる。** CSV の取り込みは、解析の結果（追加されるもの、
+  取り込まない行と理由）を要約として出し、押されたときに、見せた要約と同じ内容だけを書く。
+  要約を出したあとで登録内容が変わっていたら、書かずに要約を出し直す。
 
 ## 設計原則
 
