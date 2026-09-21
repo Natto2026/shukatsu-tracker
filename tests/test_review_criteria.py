@@ -57,7 +57,7 @@ def test_industry_overlay_extends_the_base(industry):
     base = criteria_module.base_criteria()
     merged = criteria_module.for_industry(industry)
     assert len(merged) >= len(base)
-    assert set(c.id for c in base) <= set(merged.ids)
+    assert {c.id for c in base} <= {c.id for c in merged}
     assert merged.industry == industry
 
 
@@ -75,7 +75,7 @@ def test_weight_is_capped():
 
 def test_unknown_industry_falls_back_to_base_only():
     merged = criteria_module.for_industry("その他")
-    assert merged.ids == tuple(
+    assert tuple(c.id for c in merged) == tuple(
         c.id for c in sorted(criteria_module.base_criteria(), key=lambda c: (-c.weight, c.id))
     )
 

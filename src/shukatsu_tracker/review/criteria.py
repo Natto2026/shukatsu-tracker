@@ -52,10 +52,6 @@ class CriteriaSet:
     def __len__(self) -> int:
         return len(self.criteria)
 
-    @property
-    def ids(self) -> tuple[str, ...]:
-        return tuple(c.id for c in self.criteria)
-
 
 def _load(path: Path) -> dict:
     with path.open("rb") as handle:

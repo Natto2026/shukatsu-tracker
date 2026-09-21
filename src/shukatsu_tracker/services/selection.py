@@ -12,7 +12,7 @@ from datetime import date
 
 from .. import analytics, constants
 from ..db import CompanyRepository, Database, StepRepository, transaction
-from ..models import Company, Deadline, FunnelRow, Step, StepView
+from ..models import Company, Deadline, Step, StepView
 
 
 class _Unset:
@@ -180,6 +180,3 @@ class SelectionService:
             active_companies=active,
             deadlines=analytics.upcoming_deadlines(all_steps, today, within_days=within_days),
         )
-
-    def funnel(self) -> list[FunnelRow]:
-        return analytics.funnel(self.all_step_views(), constants.DEFAULT_STEPS)
