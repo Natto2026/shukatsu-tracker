@@ -51,6 +51,7 @@
 | 企業名は前後の空白を除き、空なら拒否 | `test_name_is_trimmed_and_required` |
 | 重複で失敗したとき、ステップだけが残らない | `test_duplicate_name_leaves_no_orphan_steps` |
 | 追加したステップは末尾に付く | `test_added_step_goes_to_the_end` |
+| 追加するステップの並び順は、書き込みと同じ境界の中で読む | `test_add_step_reads_the_order_inside_the_transaction` |
 | 空のステップ名・未定義の結果は拒否 | `test_blank_step_name_is_rejected`、`test_undefined_result_is_rejected` |
 | 締切を消しても結果には触れない | `test_deadline_can_be_cleared_without_touching_the_result` |
 | 変更なしの更新は何もしない | `test_updating_nothing_is_a_no_op` |
@@ -90,6 +91,7 @@
 | 同時に書いた行がすべて残る | `test_concurrent_writers_all_persist` |
 | サービス経由の書き込みは直列化される | `test_service_level_writes_are_serialised` |
 | 重複で失敗しても先に入れた行は残る | `test_a_duplicate_failure_leaves_earlier_rows_intact` |
+| SQLite の境界は開始時に書き込みロックを取り、別の接続の書き込みを待たせる | `test_sqlite_boundary_takes_the_write_lock_at_the_start` |
 
 ### 画面（`tests/test_app_behaviour.py`、`tests/test_app_smoke.py`）
 

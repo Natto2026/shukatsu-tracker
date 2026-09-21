@@ -75,7 +75,7 @@ class Database:
         return self._depth
 
     def begin(self) -> None:
-        self._raw.execute("BEGIN")
+        self._raw.execute(self.dialect.begin_sql)
         self._depth = 1
 
     def enter(self) -> None:
