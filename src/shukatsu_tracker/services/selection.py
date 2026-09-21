@@ -12,7 +12,7 @@ from datetime import date
 
 from .. import analytics, constants
 from ..db import CompanyRepository, Database, StepRepository, transaction
-from ..models import Company, Deadline, FunnelRow, Step, StepView
+from ..models import Company, Deadline, Step, StepView
 
 
 class _Unset:
@@ -127,8 +127,10 @@ class SelectionService:
         label = name.strip()
         if not label:
             raise ValueError("ステップ名は必須です")
-        existing = self._steps.list_for_company(company_id)
+        # 並び順を決める読み取りも境界の中で行う。外で読むと、読んでから書くまでの
+        # 間に別の追加が割り込み、同じ並び順が2つできる。
         with transaction(self._db):
+            existing = self._steps.list_for_company(company_id)
             return self._steps.add(
                 Step(
                     company_id=company_id,
@@ -180,6 +182,3 @@ class SelectionService:
             active_companies=active,
             deadlines=analytics.upcoming_deadlines(all_steps, today, within_days=within_days),
         )
-
-    def funnel(self) -> list[FunnelRow]:
-        return analytics.funnel(self.all_step_views(), constants.DEFAULT_STEPS)

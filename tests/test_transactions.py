@@ -7,10 +7,12 @@
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 
 import pytest
 
+from shukatsu_tracker import db
 from shukatsu_tracker.db import DuplicateKeyError, transaction
 from shukatsu_tracker.models import Company
 from shukatsu_tracker.services import SelectionService
@@ -50,6 +52,30 @@ class TestSingleThread:
                 conn.execute("INSERT INTO companies (name) VALUES (?)", ("内側",))
                 raise RuntimeError("内側で失敗")
         assert company_names(conn) == []
+
+
+class TestSeparateConnections:
+    def test_sqlite_boundary_takes_the_write_lock_at_the_start(self, tmp_path):
+        """境界を開いた時点で、別の接続の書き込みを待たせること（SQLite）。
+
+        開始時にロックを取らないと、境界の中で読んでから書くまでの間に別の接続が
+        書き込めてしまい、読んだ値（並び順の算出など）が古くなる。
+        """
+        first = db.connect(tmp_path / "shared.db")
+        second = db.connect(tmp_path / "shared.db")
+        second.execute("PRAGMA busy_timeout = 100")
+        try:
+            with transaction(first):
+                first.fetchall("SELECT id FROM companies")
+                with pytest.raises(sqlite3.OperationalError, match="locked"), transaction(second):
+                    second.execute("INSERT INTO companies (name) VALUES (?)", ("割り込み社",))
+            with transaction(second):
+                second.execute("INSERT INTO companies (name) VALUES (?)", ("後続社",))
+            assert company_names(first) == ["後続社"]
+            assert second.depth == 0
+        finally:
+            first.close()
+            second.close()
 
 
 class TestSharedConnection:

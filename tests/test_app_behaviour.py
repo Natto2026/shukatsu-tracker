@@ -14,8 +14,8 @@ from streamlit.testing.v1 import AppTest
 
 from shukatsu_tracker import db
 from shukatsu_tracker.db import transaction
-from shukatsu_tracker.models import Company
-from shukatsu_tracker.services import SelectionService
+from shukatsu_tracker.models import Company, EsAnswer
+from shukatsu_tracker.services import EsService, SelectionService
 
 APP_PATH = str(Path(__file__).parent.parent / "app.py")
 
@@ -107,6 +107,71 @@ class TestNoWriteOnRender:
         assert not at.exception, at.exception
         assert read_step(app_db, step_id)[1] == "通過"
 
+    def test_a_stale_tab_is_told_that_its_edit_was_not_saved(self, app_db):
+        """古い表示のまま編集して保存したら、反映しなかったことを知らせること。
+
+        保存の再実行で入力欄は最新の値で作り直されるため、古いタブの編集は
+        届かない。黙って「変更はありませんでした」と出すと、利用者は保存できた
+        のか、編集が消えたのかを区別できない。
+        """
+        _, step_id = seed_company(app_db, deadline="2026-10-01")
+        at = open_page(app_db, "企業管理")
+
+        database = open_db(app_db)
+        try:
+            SelectionService(database).update_step(step_id, result="通過")
+        finally:
+            database.close()
+
+        stale = [s for s in at.selectbox if s.label == "結果"]
+        assert stale, "結果の入力欄が見つからない"
+        stale[0].set_value("落選")
+        [b for b in at.button if b.label == "選考ステップを保存"][0].click().run()
+
+        assert not at.exception, at.exception
+        assert read_step(app_db, step_id) == ("2026-10-01", "通過")
+        assert any("他の場所で更新された" in w.value for w in at.warning)
+        assert not any("変更はありませんでした" in i.value for i in at.info)
+
+    def test_an_edit_on_an_untouched_row_is_still_saved_from_a_stale_tab(self, app_db):
+        """他の場所で更新されていない行の編集は、同じ保存でそのまま反映されること。"""
+        company_id, first_id = seed_company(app_db, deadline="2026-10-01")
+        database = open_db(app_db)
+        try:
+            second_id = SelectionService(database).add_step(company_id, "1次面接")
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+
+        database = open_db(app_db)
+        try:
+            SelectionService(database).update_step(first_id, result="通過")
+        finally:
+            database.close()
+
+        results = [s for s in at.selectbox if s.label == "結果"]
+        results[0].set_value("落選")
+        results[1].set_value("辞退")
+        [b for b in at.button if b.label == "選考ステップを保存"][0].click().run()
+
+        assert not at.exception, at.exception
+        assert read_step(app_db, first_id)[1] == "通過"
+        assert read_step(app_db, second_id)[1] == "辞退"
+        assert any("他の場所で更新された" in w.value for w in at.warning)
+        assert any("1 件を保存しました" in i.value for i in at.info)
+
+    def test_saving_a_fresh_tab_does_not_warn(self, app_db):
+        """最新の表示から保存したときは、警告を出さないこと。"""
+        _, step_id = seed_company(app_db, deadline="2026-10-01")
+        at = open_page(app_db, "企業管理")
+        [s for s in at.selectbox if s.label == "結果"][0].set_value("通過")
+        [b for b in at.button if b.label == "選考ステップを保存"][0].click().run()
+
+        assert not at.exception, at.exception
+        assert read_step(app_db, step_id)[1] == "通過"
+        assert not any("他の場所で更新された" in w.value for w in at.warning)
+        assert any("1 件を保存しました" in i.value for i in at.info)
+
 
 class TestErrorsAreFriendly:
     def test_duplicate_company_name_shows_a_message_not_a_traceback(self, app_db):
@@ -126,6 +191,47 @@ class TestErrorsAreFriendly:
         [b for b in at.button if b.label == "追加"][0].click().run()
         assert not at.exception, at.exception
         assert any("企業名を入力してください" in e.value for e in at.error)
+
+
+class TestUserTextIsNotMarkdown:
+    """利用者が入れた文字列を、ラベルや通知で Markdown として解釈させないこと。"""
+
+    HOSTILE = "**太字** [罠](https://example.com)"
+
+    def test_delete_confirmation_label_is_escaped(self, app_db):
+        database = open_db(app_db)
+        try:
+            SelectionService(database).add_company(Company(name=self.HOSTILE), with_default_steps=False)
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+        label = [c.label for c in at.checkbox if "削除することを理解しました" in c.label][0]
+        assert self.HOSTILE not in label
+        assert r"\*\*太字\*\*" in label
+
+    def test_added_company_notice_is_escaped(self, app_db):
+        at = open_page(app_db, "企業管理")
+        [i for i in at.text_input if i.label == "企業名 *"][0].set_value(self.HOSTILE)
+        [b for b in at.button if b.label == "追加"][0].click().run()
+        assert not at.exception, at.exception
+        notices = [s.value for s in at.success if "追加しました" in s.value]
+        assert notices, "追加の通知が見つからない"
+        assert self.HOSTILE not in notices[0]
+
+    def test_es_expander_label_is_escaped(self, app_db):
+        database = open_db(app_db)
+        try:
+            company_id = SelectionService(database).add_company(
+                Company(name=self.HOSTILE), with_default_steps=False
+            )
+            EsService(database).add(EsAnswer(question=self.HOSTILE, company_id=company_id, answer="本文"))
+        finally:
+            database.close()
+        at = open_page(app_db, "ES管理")
+        labels = [e.label for e in at.expander if "太字" in e.label]
+        assert labels, "回答の見出しが見つからない"
+        assert self.HOSTILE not in labels[0]
+        assert labels[0].count(r"\*\*太字\*\*") == 2
 
 
 class TestDestructiveActionsNeedConfirmation:
@@ -156,6 +262,129 @@ class TestDestructiveActionsNeedConfirmation:
             assert SelectionService(database).company(company_id) is None
         finally:
             database.close()
+
+
+class TestEsLibraryFilter:
+    def test_keyword_narrows_the_list(self, app_db):
+        """絞り込みはサービス層の検索を通ること（画面に同じ判定を持たない）。"""
+        database = open_db(app_db)
+        try:
+            es = EsService(database)
+            es.add(EsAnswer(question="学生時代に力を入れたこと", category="ガクチカ", answer="大会の運営"))
+            es.add(EsAnswer(question="志望動機", category="志望動機", answer="事業に関心がある"))
+        finally:
+            database.close()
+
+        at = open_page(app_db, "ES管理")
+        assert any("2 / 2 件" in c.value for c in at.caption)
+
+        [i for i in at.text_input if i.label.startswith("キーワード検索")][0].set_value("運営").run()
+        assert not at.exception, at.exception
+        assert any("1 / 2 件" in c.value for c in at.caption)
+        assert [e.label for e in at.expander if "ガクチカ" in e.label]
+        assert not [e.label for e in at.expander if "志望動機" in e.label]
+
+
+class TestCsvImport:
+    """取り込みは、要約を見せてから、押されたときにだけ書くこと。"""
+
+    CSV = (
+        "企業名,業界,ステップ,締切,結果,パスワード\n"
+        "アオゾラ電機,メーカー,ES,2026-10-01,通過,hunter2\n"
+        "アオゾラ電機,,1次面接,,,\n"
+        "ミカヅキ銀行,金融,ES,10月5日,,\n"
+    )
+
+    @staticmethod
+    def company_names(path) -> list[str]:
+        database = open_db(path)
+        try:
+            return [c.name for c in SelectionService(database).companies()]
+        finally:
+            database.close()
+
+    def upload(self, app_db, text: str, codec: str = "cp932") -> AppTest:
+        at = open_page(app_db, "取り込み")
+        at.file_uploader[0].set_value(("export.csv", text.encode(codec), "text/csv")).run()
+        assert not at.exception, at.exception
+        return at
+
+    def test_summary_is_shown_and_nothing_is_written_until_confirmed(self, app_db):
+        at = self.upload(app_db, self.CSV)
+        metrics = {m.label: m.value for m in at.metric}
+        assert metrics == {"追加される企業": "1 社", "追加されるステップ": "2 件", "取り込まない行": "1 行"}
+        tables = [frame.value for frame in at.dataframe]
+        skipped = [t for t in tables if "理由" in t.columns and "行" in t.columns][0]
+        assert list(skipped["行"]) == [4]
+        assert "10月5日" in skipped["理由"].iloc[0]
+        ignored = [t for t in tables if list(t.columns) == ["見出し", "理由"]][0]
+        assert list(ignored["見出し"]) == ["パスワード"]
+        assert "hunter2" not in " ".join(t.to_string() for t in tables)
+        assert self.company_names(app_db) == []
+
+    def test_confirming_writes_what_the_summary_showed(self, app_db):
+        at = self.upload(app_db, self.CSV)
+        [b for b in at.button if b.label == "この内容で取り込む"][0].click().run()
+        assert not at.exception, at.exception
+        assert self.company_names(app_db) == ["アオゾラ電機"]
+        assert any("1 社・2 件のステップを取り込みました" in s.value for s in at.success)
+        at.run()
+        assert at.file_uploader[0].value is None, "取り込み後は選択済みのファイルを外す"
+        assert not [b for b in at.button if b.label == "この内容で取り込む"]
+
+    def test_unreadable_file_shows_a_message_not_a_traceback(self, app_db):
+        at = self.upload(app_db, "名前,ステップ\nアオゾラ電機,ES\n")
+        assert any("企業名" in e.value for e in at.error)
+        assert not [b for b in at.button if b.label == "この内容で取り込む"]
+
+    def test_a_summary_that_went_stale_is_not_applied(self, app_db):
+        """要約を出したあとで登録内容が変わったら、押されても書かずに知らせること。
+
+        見せた要約と違う内容を、確認なしに書かない。残りの企業だけを黙って入れることもしない。
+        """
+        at = self.upload(app_db, "企業名,ステップ\nアオゾラ電機,ES\nコダマ製作所,ES\n")
+        database = open_db(app_db)
+        try:
+            SelectionService(database).add_company(
+                Company(name="アオゾラ電機", memo="先に登録"), with_default_steps=False
+            )
+        finally:
+            database.close()
+
+        [b for b in at.button if b.label == "この内容で取り込む"][0].click().run()
+        assert not at.exception, at.exception
+        assert any("取り込みは行っていません" in w.value for w in at.warning)
+        assert self.company_names(app_db) == ["アオゾラ電機"]
+        assert {m.label: m.value for m in at.metric}["追加される企業"] == "1 社"
+
+        [b for b in at.button if b.label == "この内容で取り込む"][0].click().run()
+        assert not at.exception, at.exception
+        database = open_db(app_db)
+        try:
+            stored = {c.name: c.memo for c in SelectionService(database).companies()}
+        finally:
+            database.close()
+        assert stored == {"アオゾラ電機": "先に登録", "コダマ製作所": ""}
+
+
+class TestLabels:
+    def test_review_page_title_matches_the_menu(self, app_db):
+        """メニューの項目名とページの題がずれていないこと。"""
+        at = open_page(app_db, "添削")
+        assert [t.value for t in at.title] == ["添削"]
+
+    def test_funnel_table_has_no_english_heading(self, app_db):
+        """分析ページの表の見出しに、内部の列名が出ていないこと。"""
+        _, step_id = seed_company(app_db)
+        database = open_db(app_db)
+        try:
+            SelectionService(database).update_step(step_id, result="通過")
+        finally:
+            database.close()
+        at = open_page(app_db, "分析")
+        funnel = at.dataframe[-1].value
+        assert funnel.index.name == "選考ステップ"
+        assert "step" not in [funnel.index.name, *funnel.columns]
 
 
 class TestConnectionScope:

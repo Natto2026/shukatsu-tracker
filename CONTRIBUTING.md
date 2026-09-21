@@ -17,12 +17,17 @@ main / develop / 作業ブランチの3層で運用する。
 
 - main と develop へ直接 push しない。必ず PR を経由する
   (private リポジトリではブランチ保護を設定できないため、規約として守る)
-- 作業ブランチの名前には Issue 番号を入れる(例: `feature/7-ical-export`)。PR 本文に `Closes #7` を書く
+- 対応する Issue がある作業ブランチの名前には Issue 番号を入れる(例: `feature/7-ical-export`)。PR 本文に `Closes #7` を書く
 - マージ後は作業ブランチを削除する
+
+この運用は 0.7.0 から適用している。それより前の PR は main 向きで、ブランチ名に Issue 番号も入っていない。
+
+開発しているのは作者1人で、hotfix を実際に切ったことはない。1人なら main だけでも回るが、
+業務で使われる運用を自分の手で一通り再現しておくために、この形にしている。
 
 ## 開発フロー
 
-1. Issue を立てる(または既存の Issue を選ぶ)
+1. Issue を立てる(または既存の Issue を選ぶ)。小さな修正は Issue なしで始めてよい
 2. develop から作業ブランチを切る
 3. PR 前にローカルで `ruff check .`・`ruff format --check .`・`python -m mypy`・`python -m pytest` をすべて通す
 4. 挙動を変える修正には回帰テストを添える
@@ -74,9 +79,12 @@ main / develop / 作業ブランチの3層で運用する。
 
 ## スクリーンショット更新
 
-デモデータで撮る(実データ禁止):
+デモデータで撮る(実データ禁止)。画面を変えたら、次の2つを流して撮り直す:
 
-```powershell
+```bash
 python scripts/demo_data.py
-$env:SHUKATSU_DB="data/demo.db"; streamlit run app.py --server.port 8502 --server.headless true
+python scripts/capture_screenshots.py    # pip install playwright が必要(開発時のみ)
 ```
+
+スクリプトがデモデータでアプリを起動し、`docs/screenshots/` の画像を上書きする。
+コミット前に画像を開き、実データやローカルのパスが写っていないことを確認する。

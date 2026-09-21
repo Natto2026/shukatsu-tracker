@@ -51,6 +51,7 @@
 | 企業名は前後の空白を除き、空なら拒否 | `test_name_is_trimmed_and_required` |
 | 重複で失敗したとき、ステップだけが残らない | `test_duplicate_name_leaves_no_orphan_steps` |
 | 追加したステップは末尾に付く | `test_added_step_goes_to_the_end` |
+| 追加するステップの並び順は、書き込みと同じ境界の中で読む | `test_add_step_reads_the_order_inside_the_transaction` |
 | 空のステップ名・未定義の結果は拒否 | `test_blank_step_name_is_rejected`、`test_undefined_result_is_rejected` |
 | 締切を消しても結果には触れない | `test_deadline_can_be_cleared_without_touching_the_result` |
 | 変更なしの更新は何もしない | `test_updating_nothing_is_a_no_op` |
@@ -59,6 +60,25 @@
 | 設問は必須。文字数制限 0 は「なし」、負数は拒否 | `test_question_is_required`、`test_zero_char_limit_is_stored_as_none`、`test_negative_char_limit_is_rejected` |
 | カテゴリとキーワードで検索できる | `test_search_by_category_and_keyword` |
 | 文字数制限との照合 | `test_length_check` |
+
+### CSV の取り込み（`tests/test_csv_import.py`）
+
+| 観点 | テスト |
+|---|---|
+| UTF-8（BOM あり・なし）と Shift-JIS を読める。読めない文字コードと Excel ブックは、ファイルの問題として伝える | `test_utf8_with_and_without_bom_and_shift_jis_are_read`、`test_undecodable_bytes_are_reported`、`test_an_excel_workbook_is_reported_as_such` |
+| 見出しの別名と、全角・空白の揺れを受ける。画面に出す列の説明と解析がずれない | `test_header_aliases_are_accepted`、`test_full_width_and_spaces_in_headers_are_tolerated`、`test_every_guide_header_is_understood_by_the_parser` |
+| 必須の列がない・同じ項目を指す見出しが2つある・空のファイルは、読み取った見出しとともに伝える | `test_missing_required_column_is_reported_with_the_headers_found`、`test_two_headers_for_the_same_field_are_rejected`、`test_empty_file_is_reported` |
+| 認証情報に当たる列は値を読まず、保存もしない。読まなかった列は黙って捨てずに一覧にする | `test_credential_columns_never_reach_the_plan`、`test_credential_columns_are_listed_as_not_imported`、`test_unknown_columns_are_listed_not_silently_dropped`、`test_credentials_are_not_stored` |
+| 同じ企業名の行は1社にまとまる。空欄は追加フォームと同じ既定値。空行は数えて読み飛ばす | `test_rows_with_the_same_name_become_one_company`、`test_blank_cells_take_the_same_defaults_as_the_form`、`test_blank_rows_are_counted_and_skipped` |
+| 行番号は表計算ソフト上の行と一致する（セル内改行があってもずれない）。企業名が空の行は行番号つきで伝える | `test_line_numbers_match_the_spreadsheet_rows`、`test_blank_company_name_is_reported_with_its_line` |
+| 読めない締切を空にしない。選択肢にない値を既定値に丸めない。締切は ISO 形式に揃える | `test_unreadable_deadline_is_reported_not_nulled`、`test_value_outside_the_choices_is_reported_not_defaulted`、`test_deadline_is_normalised_to_iso` |
+| ステップ名のない締切・結果、見出しより右の値は取り込まずに伝える | `test_step_details_without_a_step_name_are_reported`、`test_cells_beyond_the_header_are_reported` |
+| 1行でも問題があれば、その企業は丸ごと取り込まない | `test_one_bad_row_holds_back_the_whole_company` |
+| 登録済みの企業は上書きせず伝える。企業内のステップの重複と、行どうしの属性の食い違いも伝える | `test_existing_company_is_reported_not_overwritten`、`test_repeated_step_within_a_company_is_reported`、`test_conflicting_company_attributes_are_reported`、`test_repeating_the_same_attribute_is_not_a_conflict` |
+| 同梱の見本はそのまま取り込め、デモデータと同じ架空の企業名だけを使う | `test_the_bundled_sample_imports_without_any_skip`、`test_the_bundled_sample_uses_only_the_demo_company_names` |
+| 要約の作成では書き込まない。取り込みは CSV の並び順でステップを入れ、既定のステップを足さない | `test_preview_writes_nothing`、`test_apply_writes_companies_and_steps_in_order`、`test_default_steps_are_not_added_on_top_of_the_csv`、`test_preview_reports_companies_already_in_the_database` |
+| 途中で失敗したら何も残らない（処理中の例外でも、DB の一意制約違反でも） | `test_a_failure_midway_leaves_nothing_behind`、`test_a_duplicate_inside_the_database_rolls_back_the_whole_import` |
+| 要約のあとに登録された同名の企業を上書きしない | `test_company_registered_after_the_preview_is_not_overwritten` |
 
 ### スキーマ適用（`tests/test_migrations.py`）
 
@@ -72,6 +92,13 @@
 | 途中で失敗した適用は巻き戻る | `test_a_failing_migration_is_rolled_back` |
 | 外部キー制約が効いている | `test_foreign_keys_are_enforced` |
 
+### 接続（`tests/test_connection.py`）
+
+| 観点 | テスト |
+|---|---|
+| 未対応の接続先・psycopg の未導入・届かない PostgreSQL・開けない SQLite ファイルは、どれも共通の例外になる | `test_unsupported_scheme_is_translated`、`test_missing_postgres_driver_is_translated`、`test_unreachable_postgres_is_translated_without_leaking_the_target`、`test_sqlite_file_that_cannot_be_opened_is_translated` |
+| 接続に失敗しても画面は例外ではなく文面を出し、接続文字列の中身を出さない | `test_app_shows_a_message_not_a_traceback` |
+
 ### トランザクション（`tests/test_transactions.py`）
 
 | 観点 | テスト |
@@ -83,6 +110,7 @@
 | 同時に書いた行がすべて残る | `test_concurrent_writers_all_persist` |
 | サービス経由の書き込みは直列化される | `test_service_level_writes_are_serialised` |
 | 重複で失敗しても先に入れた行は残る | `test_a_duplicate_failure_leaves_earlier_rows_intact` |
+| SQLite の境界は開始時に書き込みロックを取り、別の接続の書き込みを待たせる | `test_sqlite_boundary_takes_the_write_lock_at_the_start` |
 
 ### 画面（`tests/test_app_behaviour.py`、`tests/test_app_smoke.py`）
 
@@ -92,8 +120,13 @@
 | 登録した企業がダッシュボードに出る | `test_dashboard_shows_registered_company` |
 | 描画しただけでは書き換えない（読めない締切を壊さない） | `test_rendering_does_not_destroy_an_unreadable_deadline`、`test_saving_without_edits_keeps_an_unreadable_deadline` |
 | 別の場所の更新を古い表示で戻さない | `test_rendering_does_not_revert_an_out_of_band_update`、`test_a_stale_tab_cannot_overwrite_a_newer_change` |
+| 古い表示への入力は反映せず、そのことを知らせる。更新されていない行の編集は通す。最新の表示からの保存では警告しない | `test_a_stale_tab_is_told_that_its_edit_was_not_saved`、`test_an_edit_on_an_untouched_row_is_still_saved_from_a_stale_tab`、`test_saving_a_fresh_tab_does_not_warn` |
 | 入力エラーは例外ではなく文面で出る | `test_duplicate_company_name_shows_a_message_not_a_traceback`、`test_blank_company_name_is_reported` |
+| ES管理の絞り込みが効く（判定はサービス層の検索） | `test_keyword_narrows_the_list` |
+| 利用者が入れた文字列を、ラベルや通知で Markdown として解釈させない | `TestUserTextIsNotMarkdown` |
+| メニューの項目名とページの題が揃い、表の見出しに内部の列名が出ない | `test_review_page_title_matches_the_menu`、`test_funnel_table_has_no_english_heading` |
 | 削除は確認しないと押せない。確認すれば消える | `test_delete_is_disabled_until_confirmed`、`test_delete_works_once_confirmed` |
+| CSV の取り込みは、要約を出しただけでは書かず、押されたときに要約どおりに書く。読めないファイルは文面で伝える。要約のあとで登録内容が変わっていたら書かずに知らせる | `test_summary_is_shown_and_nothing_is_written_until_confirmed`、`test_confirming_writes_what_the_summary_showed`、`test_unreadable_file_shows_a_message_not_a_traceback`、`test_a_summary_that_went_stale_is_not_applied` |
 | セッションごとに接続を持ち、別接続から書き込みが見える | `test_each_session_opens_its_own_connection`、`test_write_through_the_app_is_visible_to_another_connection` |
 | 保存先の表示にパスワードや絶対パスが出ない | `TestTargetIsNotLeaked` |
 
@@ -116,6 +149,7 @@
 | 未知の業界・業界なしでも共通観点で動く | `test_unknown_industry_falls_back_to_base_only`、`test_none_industry_is_accepted` |
 | 観点は重みの順に並ぶ | `test_criteria_are_ordered_by_weight` |
 | 依頼文に本文・文字数・全観点が入り、業界で変わる | `test_contains_the_target`、`test_reports_length_without_a_limit`、`test_lists_every_criterion`、`test_industry_changes_the_criteria_shown` |
+| 設問と提出先は1行に収まり、改行で見出しや指示を差し込めない | `test_question_and_company_cannot_start_a_new_line` |
 | 補足は与えたときだけ入る。複数行の観点で表が崩れない。空入力は拒否。事実の捏造を禁じる指示が入る | `test_note_is_included_only_when_given`、`test_multiline_criteria_do_not_break_the_table`、`test_empty_input_is_rejected`、`test_system_prompt_forbids_inventing_facts` |
 | 既定の実行先は依頼文をそのまま返し、通信しないと宣言する | `test_returns_the_prompt_unchanged`、`test_declares_that_it_does_not_send_data` |
 | API の実行先は送信内容・拒否・空応答・依存やキーの欠如を扱える | `TestAnthropicProvider`、`TestExtractText` |

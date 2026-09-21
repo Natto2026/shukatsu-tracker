@@ -64,7 +64,6 @@ class TestExportProvider:
         assert result.text == PROMPT
         assert result.prompt == PROMPT
         assert result.model is None
-        assert not result.sent_externally
 
     def test_declares_that_it_does_not_send_data(self):
         assert ExportProvider().sends_data_externally is False
@@ -77,7 +76,6 @@ class TestAnthropicProvider:
 
         assert result.text == "所見の本文"
         assert result.model == "fake-model"
-        assert result.sent_externally
         sent = client.calls[0]
         assert sent["messages"] == [{"role": "user", "content": PROMPT}]
         assert "補って書かないこと" in sent["system"]

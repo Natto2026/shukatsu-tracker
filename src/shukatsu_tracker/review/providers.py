@@ -46,10 +46,6 @@ class ReviewResult:
     text: str
     model: str | None = None
 
-    @property
-    def sent_externally(self) -> bool:
-        return self.model is not None
-
 
 class ReviewProvider(Protocol):
     """評価の実行先の共通の形。"""

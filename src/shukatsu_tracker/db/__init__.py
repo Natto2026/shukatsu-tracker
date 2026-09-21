@@ -3,7 +3,13 @@
 from .connection import connect, transaction
 from .database import Database
 from .dialects import describe
-from .errors import DatabaseError, DuplicateKeyError, ForeignKeyError, MigrationError
+from .errors import (
+    ConnectionFailedError,
+    DatabaseError,
+    DuplicateKeyError,
+    ForeignKeyError,
+    MigrationError,
+)
 from .repositories import (
     CompanyRepository,
     EsAnswerRepository,
@@ -13,6 +19,7 @@ from .repositories import (
 
 __all__ = [
     "CompanyRepository",
+    "ConnectionFailedError",
     "Database",
     "DatabaseError",
     "DuplicateKeyError",

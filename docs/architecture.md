@@ -20,7 +20,7 @@ shukatsu-tracker/
 │       │   ├── transactions.py   # トランザクション境界
 │       │   ├── migrations.py     # スキーマのバージョン適用
 │       │   ├── migrations/*.sql  # スキーマ本体（連番。追記のみ。方言共通）
-│       │   └── repositories.py   # テーブルごとの読み書き（SQL を書く唯一の場所）
+│       │   └── repositories.py   # テーブルごとの読み書き（SQL はここと migrations に書く）
 │       ├── review/               # 回答への所見
 │       │   ├── criteria.py       # 観点の読み込みと業界ごとの合成
 │       │   ├── criteria/*.toml   # 観点の定義（データ。コード変更なしで追記できる）
@@ -28,9 +28,12 @@ shukatsu-tracker/
 │       │   └── providers.py      # 実行先（既定は通信しない書き出しのみ）
 │       └── services/             # ユースケース層（UI が呼ぶ入口）
 │           ├── selection.py      # 企業・選考ステップの操作と集計の取りまとめ
+│           ├── csv_import.py     # CSV の解析（DB に触れない）と、確認後の一括登録
 │           ├── es.py             # 設問・回答の保存と検索
 │           └── review.py         # 所見を取る順序の固定と履歴の保存
-├── scripts/demo_data.py          # デモデータ生成（架空企業）
+├── scripts/
+│   ├── demo_data.py              # デモデータ生成（架空企業）
+│   └── capture_screenshots.py    # デモデータでスクリーンショットを撮り直す（開発時のみ）
 ├── docker-compose.yml            # PostgreSQL を手元で試す場合の構成（既定では不要）
 ├── tests/                        # 層ごとの単体テスト + AppTest による画面のテスト
 └── docs/                         # 設計文書（このフォルダ）
@@ -46,6 +49,7 @@ flowchart TB
     UI["app.py<br>(Streamlit UI)"]
     subgraph services["services/（ユースケース層）"]
         SEL["selection.py"]
+        IMP["csv_import.py"]
         ES["es.py"]
         RV["review.py"]
     end
@@ -67,6 +71,7 @@ flowchart TB
     SQL[("保存先<br>SQLite または PostgreSQL")]
 
     UI --> SEL
+    UI --> IMP
     UI --> ES
     UI --> RV
     UI --> EX
@@ -77,6 +82,8 @@ flowchart TB
     RV --> REPO
     SEL --> AN
     SEL --> REPO
+    IMP --> AN
+    IMP --> REPO
     ES --> REPO
     REPO --> DBF
     DBF --> TX
@@ -105,20 +112,26 @@ flowchart TB
 - **入力欄の key に保存済みの値を含める。** Streamlit は key を持つウィジェットの
   値をセッションに残すため、DB が変わっても古い値が残り続ける。key を値に連動
   させると、更新があったときに入力欄が作り直される。
-- **保存時にも突き合わせる。** 表示した時点の値と現在の値がずれていれば、その行は
-  書かずに利用者へ知らせる。
+- **保存時にも突き合わせる。** 表示した値を入力欄とは別にセッションへ控えておき、
+  保存を押したときの値とずれていれば、その行への入力は反映せず（入力欄は最新の値で
+  作り直されている）、反映しなかったことを利用者へ知らせる。
 - **利用者の入力を Markdown として解釈しない。** 企業名・メモ・URL は表示前に
   エスケープする。URL は scheme を確認してからリンクにする。
 - **破壊的な操作には確認を挟む。** 何が失われるかを書いたうえで、確認してから実行する。
+- **まとめて書く操作は、先に結果を見せる。** CSV の取り込みは、解析の結果（追加されるもの、
+  取り込まない行と理由）を要約として出し、押されたときに、見せた要約と同じ内容だけを書く。
+  要約を出したあとで登録内容が変わっていたら、書かずに要約を出し直す。
 
 ## 設計原則
 
-1. **ローカル完結（既定）** — 既定の保存先は `data/*.db` のみ。外部送信ゼロ。
-   サーバーは 127.0.0.1 バインド。PostgreSQL を別ホストに向けた場合はこの前提が変わる
+1. **ローカル完結（既定）** — 既定の保存先は `data/*.db` のみで、既定では通信しない。
+   サーバーは 127.0.0.1 バインド。例外は利用者が選んだ場合の2つだけ（添削の実行先に
+   Claude API を選ぶ／`SHUKATSU_DB` を別ホストの PostgreSQL に向ける）
 2. **認証情報を持たない** — パスワードは保存しない。マイページ URL・ログイン用メールは
    保存するが書き出しには含めない（回帰テストで保証）
-3. **外部とはファイルで受け渡す** — アプリは通信せず Markdown を書き出すだけ。
-   何をどこまで渡すかの判断を利用者の手に残す
+3. **外部に出すかどうかは利用者が決める** — 書き出しは通信せず Markdown を渡すだけ。
+   添削も既定は通信しない書き出しで、Claude API に送るのは `ANTHROPIC_API_KEY` がある環境で
+   利用者がその実行先を選んだときだけ。送る文面は実行前に画面へ出す
 4. **数字を文書にハードコードしない** — テスト件数などは CI ログを正とする
 5. **個人データをリポジトリに入れない** — `data/` は .gitignore。スクリーンショットも
    架空企業のデモデータで撮る
@@ -152,18 +165,26 @@ flowchart TB
   入れ子かどうかは接続の状態ではなくこの層が数える深さで判定する。接続の状態で
   判定すると、別スレッドが開けたトランザクションを自分のものと誤認し、相手の
   ROLLBACK で自分の書き込みが消える。
+  境界は書き込みにしか使わないので、SQLite では `BEGIN IMMEDIATE` で開き、開始時に
+  書き込みロックを取る。境界の中で読んだ値（並び順の算出など）が、書くまでの間に
+  別の接続の書き込みで古くならないようにするため。
 - **更新できる列は列挙する。** 列名はプレースホルダに置けないため、リポジトリごとに
   `writable` を持ち、そこにない列が渡されたら SQL に届く前に `ValueError` にする。
 - **DB は差し替えられる。** SQLite と PostgreSQL に対応する。SQL は1組のまま、
   方言の差（プレースホルダ・主キーの書き方・日付関数・例外の型）は `dialects.py`
   に閉じる。マイグレーションの SQL では `{{PK}}` などの差し込み記号で吸収する。
   同じテスト一式を両方の DBMS に対して CI で走らせ、差分の抜けを検出する。
-- **ドライバの例外を外に出さない。** 一意制約違反などは `errors.py` の共通の型に
-  翻訳する。DB を替えても、サービス層と画面のエラー処理を書き換えずに済む。
+- **ドライバの例外を外に出さない。** 一意制約違反や接続の失敗などは `errors.py` の
+  共通の型に翻訳する。DB を替えても、サービス層と画面のエラー処理を書き換えずに済む。
 
 ## 開発フロー
 
-Issue 起点 → `feature/xxx` または `fix/xxx` ブランチ → ruff + mypy + pytest をローカルで通す →
-Pull Request（CI: lint、typecheck、SQLite で 3.11/3.13、実際の PostgreSQL で同じテスト一式）
+Issue 起点 → develop から作業ブランチ（`feature/…` `fix/…` `docs/…` `chore/…`）を切る →
+ruff（check と format）+ mypy + pytest をローカルで通す → CHANGELOG の Unreleased に追記 →
+develop への Pull Request（CI: lint、typecheck、SQLite で 3.11/3.13、実際の PostgreSQL で同じテスト一式）
 → マージ → ブランチ削除。
-節目で CHANGELOG を更新し、セマンティックバージョニングでタグ+リリースを切る。
+
+リリースは develop から `release/X.Y.Z` を切って版番号と CHANGELOG の見出しを確定し、main へ
+Pull Request を出す。マージ後に main へ `vX.Y.Z` のタグを打って GitHub Release を作り、main を
+develop に取り込んで両方を揃える。バージョニングはセマンティックバージョニング。
+ブランチの役割と手順の詳細は [CONTRIBUTING.md](../CONTRIBUTING.md) にある。
