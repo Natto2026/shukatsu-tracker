@@ -193,6 +193,47 @@ class TestErrorsAreFriendly:
         assert any("企業名を入力してください" in e.value for e in at.error)
 
 
+class TestUserTextIsNotMarkdown:
+    """利用者が入れた文字列を、ラベルや通知で Markdown として解釈させないこと。"""
+
+    HOSTILE = "**太字** [罠](https://example.com)"
+
+    def test_delete_confirmation_label_is_escaped(self, app_db):
+        database = open_db(app_db)
+        try:
+            SelectionService(database).add_company(Company(name=self.HOSTILE), with_default_steps=False)
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+        label = [c.label for c in at.checkbox if "削除することを理解しました" in c.label][0]
+        assert self.HOSTILE not in label
+        assert r"\*\*太字\*\*" in label
+
+    def test_added_company_notice_is_escaped(self, app_db):
+        at = open_page(app_db, "企業管理")
+        [i for i in at.text_input if i.label == "企業名 *"][0].set_value(self.HOSTILE)
+        [b for b in at.button if b.label == "追加"][0].click().run()
+        assert not at.exception, at.exception
+        notices = [s.value for s in at.success if "追加しました" in s.value]
+        assert notices, "追加の通知が見つからない"
+        assert self.HOSTILE not in notices[0]
+
+    def test_es_expander_label_is_escaped(self, app_db):
+        database = open_db(app_db)
+        try:
+            company_id = SelectionService(database).add_company(
+                Company(name=self.HOSTILE), with_default_steps=False
+            )
+            EsService(database).add(EsAnswer(question=self.HOSTILE, company_id=company_id, answer="本文"))
+        finally:
+            database.close()
+        at = open_page(app_db, "ES管理")
+        labels = [e.label for e in at.expander if "太字" in e.label]
+        assert labels, "回答の見出しが見つからない"
+        assert self.HOSTILE not in labels[0]
+        assert labels[0].count(r"\*\*太字\*\*") == 2
+
+
 class TestDestructiveActionsNeedConfirmation:
     def test_delete_is_disabled_until_confirmed(self, app_db):
         company_id, _ = seed_company(app_db)
