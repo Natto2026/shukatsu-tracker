@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### Changed
+- ES管理の絞り込みを `EsService.search` に戻した。画面が同じ判定（カテゴリとキーワード）を自前で持っており、「UI にロジックを書かない」という規約とサービス層の検索の両方から外れていた
 - `streamlit` の下限を 1.36 から 1.51 に引き上げ。`width="stretch"` を st.dataframe(1.49 から対応)と st.altair_chart(1.51 から対応)に渡しており、宣言していた下限では動かなかった
 - README に現在の利用状況を明記。作者自身の選考管理は今もスプレッドシートで、このアプリは移行経路(#8)ができるまで使っていない。スプレッドシートの課題の話がアプリの運用実績に読めていた。docs/operations.md も題を「起動と保守の手引き」に改め、運用実績を前提にしない書き方にした
 
@@ -14,6 +15,10 @@
 - 接続に失敗すると画面に生のトレースバックが出ていた。psycopg が未導入（RuntimeError）、未対応の接続先（ValueError）、届かない PostgreSQL や開けない SQLite ファイル（ドライバの例外）を、永続化層で共通の `ConnectionFailedError` に翻訳する。文面には接続先のホスト名や利用者名を含めない
 - 古いタブから選考ステップを保存すると、入力が黙って捨てられ「変更はありませんでした。」と表示されていた。保存時の再実行で入力欄が最新の値で作り直されるため、衝突を知らせる分岐には到達していなかった。表示した値を入力欄とは別に控え、表示後に他の場所で更新された行は入力を反映しなかったことを警告する。新しい値を上書きしない点は従来どおり。README・docs の説明も実際の挙動に合わせた
 - README と docs/architecture.md が「外部送信ゼロ」「アプリは通信しない」と言い切っていたのを、実装に合わせて「既定では通信しない」に修正。データが端末の外に出る2つの場合（添削の実行先に Claude API を選んだとき／`SHUKATSU_DB` を別ホストの PostgreSQL に向けたとき）をセキュリティ方針に明記した
+
+### Removed
+- 呼び出し元のないコードを削除: `SelectionService.funnel`（画面と書き出しは `analytics.funnel` を直接呼ぶ）、`StepRepository.get`、`PostgresDialect` が保持するだけで使わない `dsn`
+- テストからしか呼ばれていなかったものを削除: `ReviewService.latest` と `ReviewRepository.latest_for_answer`（履歴の先頭と同じ）、`ReviewResult.sent_externally`（実行先の `sends_data_externally` と重複）、`CriteriaSet.ids`。テストは残した入口で同じことを確かめる
 
 ## [0.7.0] - 2026-09-21
 
