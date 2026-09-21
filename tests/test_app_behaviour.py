@@ -107,6 +107,71 @@ class TestNoWriteOnRender:
         assert not at.exception, at.exception
         assert read_step(app_db, step_id)[1] == "通過"
 
+    def test_a_stale_tab_is_told_that_its_edit_was_not_saved(self, app_db):
+        """古い表示のまま編集して保存したら、反映しなかったことを知らせること。
+
+        保存の再実行で入力欄は最新の値で作り直されるため、古いタブの編集は
+        届かない。黙って「変更はありませんでした」と出すと、利用者は保存できた
+        のか、編集が消えたのかを区別できない。
+        """
+        _, step_id = seed_company(app_db, deadline="2026-10-01")
+        at = open_page(app_db, "企業管理")
+
+        database = open_db(app_db)
+        try:
+            SelectionService(database).update_step(step_id, result="通過")
+        finally:
+            database.close()
+
+        stale = [s for s in at.selectbox if s.label == "結果"]
+        assert stale, "結果の入力欄が見つからない"
+        stale[0].set_value("落選")
+        [b for b in at.button if b.label == "選考ステップを保存"][0].click().run()
+
+        assert not at.exception, at.exception
+        assert read_step(app_db, step_id) == ("2026-10-01", "通過")
+        assert any("他の場所で更新された" in w.value for w in at.warning)
+        assert not any("変更はありませんでした" in i.value for i in at.info)
+
+    def test_an_edit_on_an_untouched_row_is_still_saved_from_a_stale_tab(self, app_db):
+        """他の場所で更新されていない行の編集は、同じ保存でそのまま反映されること。"""
+        company_id, first_id = seed_company(app_db, deadline="2026-10-01")
+        database = open_db(app_db)
+        try:
+            second_id = SelectionService(database).add_step(company_id, "1次面接")
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+
+        database = open_db(app_db)
+        try:
+            SelectionService(database).update_step(first_id, result="通過")
+        finally:
+            database.close()
+
+        results = [s for s in at.selectbox if s.label == "結果"]
+        results[0].set_value("落選")
+        results[1].set_value("辞退")
+        [b for b in at.button if b.label == "選考ステップを保存"][0].click().run()
+
+        assert not at.exception, at.exception
+        assert read_step(app_db, first_id)[1] == "通過"
+        assert read_step(app_db, second_id)[1] == "辞退"
+        assert any("他の場所で更新された" in w.value for w in at.warning)
+        assert any("1 件を保存しました" in i.value for i in at.info)
+
+    def test_saving_a_fresh_tab_does_not_warn(self, app_db):
+        """最新の表示から保存したときは、警告を出さないこと。"""
+        _, step_id = seed_company(app_db, deadline="2026-10-01")
+        at = open_page(app_db, "企業管理")
+        [s for s in at.selectbox if s.label == "結果"][0].set_value("通過")
+        [b for b in at.button if b.label == "選考ステップを保存"][0].click().run()
+
+        assert not at.exception, at.exception
+        assert read_step(app_db, step_id)[1] == "通過"
+        assert not any("他の場所で更新された" in w.value for w in at.warning)
+        assert any("1 件を保存しました" in i.value for i in at.info)
+
 
 class TestErrorsAreFriendly:
     def test_duplicate_company_name_shows_a_message_not_a_traceback(self, app_db):
