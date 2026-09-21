@@ -39,7 +39,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      - run: python -m pytest -v
+      # 網羅率は記録として出すだけで、しきい値では落とさない
+      - run: python -m pytest -v --cov
 
   test-postgres:
     # 同じテストを、実際の PostgreSQL に対しても走らせる。

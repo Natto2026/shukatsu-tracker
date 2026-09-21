@@ -222,6 +222,7 @@ ruff check .
 ruff format --check .
 python -m mypy
 python -m pytest
+python -m pytest --cov    # 網羅率も見る場合（CI でも出力している。しきい値は設けていない）
 ```
 
 テストは層ごとの単体テスト（集計・リポジトリ・サービス・スキーマ適用・
