@@ -1,11 +1,16 @@
 [build-system]
-requires = ["setuptools>=68"]
+# license を SPDX の文字列で書く形式(PEP 639)は setuptools 77 から
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "shukatsu-tracker"
 version = "0.7.0"
 description = "就活の選考状況をローカルで一元管理・分析するツール"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Tomoya Nakamoto" }]
 requires-python = ">=3.11"
 dependencies = [
     # width="stretch" を st.dataframe と st.altair_chart に渡している。
