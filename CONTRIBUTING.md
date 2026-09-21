@@ -74,9 +74,12 @@ main / develop / 作業ブランチの3層で運用する。
 
 ## スクリーンショット更新
 
-デモデータで撮る(実データ禁止):
+デモデータで撮る(実データ禁止)。画面を変えたら、次の2つを流して撮り直す:
 
-```powershell
+```bash
 python scripts/demo_data.py
-$env:SHUKATSU_DB="data/demo.db"; streamlit run app.py --server.port 8502 --server.headless true
+python scripts/capture_screenshots.py    # pip install playwright が必要(開発時のみ)
 ```
+
+スクリプトがデモデータでアプリを起動し、`docs/screenshots/` の画像を上書きする。
+コミット前に画像を開き、実データやローカルのパスが写っていないことを確認する。

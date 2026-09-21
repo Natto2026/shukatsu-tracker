@@ -53,7 +53,7 @@
 # review/criteria/industry/finance.toml（抜粋）
 [meta]
 matches = "金融"
-emphasis = ["process_behind_result", "interview_ready", "cause_analysis"]
+emphasis = ["process_behind_result", "interview_ready", "cause_analysis", "not_an_impression"]
 
 [[criteria]]
 id = "evidence"
@@ -70,12 +70,12 @@ Claude API に送る実行先は、環境変数 `ANTHROPIC_API_KEY` が設定さ
 pip install -e ".[llm]"      # 通信する実行先を使う場合のみ
 ```
 
-送信に使うモデルは `SHUKATSU_REVIEW_MODEL` で差し替えられます。未設定なら既定のモデルを
-使うので、通常は設定不要です。新しいモデルに乗り換えるためにコードを直さなくて済むように
+送信に使うモデルは `SHUKATSU_REVIEW_MODEL` で差し替えられます。未設定なら既定の
+`claude-opus-5` を使うので、通常は設定不要です。新しいモデルに乗り換えるためにコードを直さなくて済むように
 してあります。
 
 ```bash
-SHUKATSU_REVIEW_MODEL=claude-sonnet-5 streamlit run app.py
+SHUKATSU_REVIEW_MODEL=claude-sonnet-5 streamlit run app.py   # 既定以外のモデルに替える例
 ```
 
 所見は履歴として残ります。評価した時点の本文を控えているため、あとから回答を
@@ -100,7 +100,8 @@ SHUKATSU_DB=postgresql://user:pass@127.0.0.1:5432/shukatsu streamlit run app.py 
 PostgreSQL を使う場合は `pip install -e ".[postgres]"` が必要です。手元で試すなら
 同梱の `docker-compose.yml` で立てられます。
 
-SQL を書く場所は `db/repositories.py` の1ファイルに閉じてあり、方言の差
+テーブルの読み書きの SQL は `db/repositories.py` の1ファイルに、スキーマは
+`db/migrations/*.sql` に閉じてあり（例外はスキーマ管理そのものだけ。[CONTRIBUTING.md](CONTRIBUTING.md) に明記）、方言の差
 （プレースホルダ・主キーの書き方・日付関数・例外の型）は `db/dialects.py` に
 集めています。**同じテスト一式が、SQLite と PostgreSQL の両方に対して CI で走ります。**
 

@@ -20,7 +20,7 @@ shukatsu-tracker/
 │       │   ├── transactions.py   # トランザクション境界
 │       │   ├── migrations.py     # スキーマのバージョン適用
 │       │   ├── migrations/*.sql  # スキーマ本体（連番。追記のみ。方言共通）
-│       │   └── repositories.py   # テーブルごとの読み書き（SQL を書く唯一の場所）
+│       │   └── repositories.py   # テーブルごとの読み書き（SQL はここと migrations に書く）
 │       ├── review/               # 回答への所見
 │       │   ├── criteria.py       # 観点の読み込みと業界ごとの合成
 │       │   ├── criteria/*.toml   # 観点の定義（データ。コード変更なしで追記できる）
@@ -30,7 +30,9 @@ shukatsu-tracker/
 │           ├── selection.py      # 企業・選考ステップの操作と集計の取りまとめ
 │           ├── es.py             # 設問・回答の保存と検索
 │           └── review.py         # 所見を取る順序の固定と履歴の保存
-├── scripts/demo_data.py          # デモデータ生成（架空企業）
+├── scripts/
+│   ├── demo_data.py              # デモデータ生成（架空企業）
+│   └── capture_screenshots.py    # デモデータでスクリーンショットを撮り直す（開発時のみ）
 ├── docker-compose.yml            # PostgreSQL を手元で試す場合の構成（既定では不要）
 ├── tests/                        # 層ごとの単体テスト + AppTest による画面のテスト
 └── docs/                         # 設計文書（このフォルダ）
@@ -166,7 +168,12 @@ flowchart TB
 
 ## 開発フロー
 
-Issue 起点 → `feature/xxx` または `fix/xxx` ブランチ → ruff + mypy + pytest をローカルで通す →
-Pull Request（CI: lint、typecheck、SQLite で 3.11/3.13、実際の PostgreSQL で同じテスト一式）
+Issue 起点 → develop から作業ブランチ（`feature/…` `fix/…` `docs/…` `chore/…`）を切る →
+ruff（check と format）+ mypy + pytest をローカルで通す → CHANGELOG の Unreleased に追記 →
+develop への Pull Request（CI: lint、typecheck、SQLite で 3.11/3.13、実際の PostgreSQL で同じテスト一式）
 → マージ → ブランチ削除。
-節目で CHANGELOG を更新し、セマンティックバージョニングでタグ+リリースを切る。
+
+リリースは develop から `release/X.Y.Z` を切って版番号と CHANGELOG の見出しを確定し、main へ
+Pull Request を出す。マージ後に main へ `vX.Y.Z` のタグを打って GitHub Release を作り、main を
+develop に取り込んで両方を揃える。バージョニングはセマンティックバージョニング。
+ブランチの役割と手順の詳細は [CONTRIBUTING.md](../CONTRIBUTING.md) にある。
