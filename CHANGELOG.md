@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### Changed
+- CONTRIBUTING.md のブランチ運用に、適用範囲(0.7.0 から。それ以前の PR は main 向き)と、1人の開発でこの運用を置いている理由を追記。Issue 番号をブランチ名に入れるのは対応する Issue がある場合、と明記した
 - 文書の取り残しを実装と規約に合わせた。docs/architecture.md の開発フロー（develop／release の流れ）と構成ツリー（`scripts/capture_screenshots.py`）、CONTRIBUTING.md のスクリーンショット更新手順（自動撮影スクリプト）、README の finance.toml 抜粋の `emphasis`・SQL を書く場所の説明・`SHUKATSU_REVIEW_MODEL` の既定値、docs/data_flow.md の書き出しの説明
 - ES管理の絞り込みを `EsService.search` に戻した。画面が同じ判定（カテゴリとキーワード）を自前で持っており、「UI にロジックを書かない」という規約とサービス層の検索の両方から外れていた
 - `streamlit` の下限を 1.36 から 1.51 に引き上げ。`width="stretch"` を st.dataframe(1.49 から対応)と st.altair_chart(1.51 から対応)に渡しており、宣言していた下限では動かなかった
