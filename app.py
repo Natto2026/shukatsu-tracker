@@ -181,7 +181,7 @@ elif page == "企業管理":
                     ),
                     with_default_steps=add_default,
                 ),
-                success=f"「{name.strip()}」を追加しました。",
+                success=f"「{as_text(name.strip())}」を追加しました。",
             ):
                 st.rerun()
 
@@ -291,7 +291,7 @@ elif page == "企業管理":
                 st.error("ステップ名を入力してください。")
             elif run_write(
                 lambda: selection.add_step(company_id, step_name),
-                success=f"「{step_name.strip()}」を追加しました。",
+                success=f"「{as_text(step_name.strip())}」を追加しました。",
             ):
                 st.rerun()
 
@@ -349,11 +349,11 @@ elif page == "企業管理":
             "保存した回答は残りますが、企業との結びつきは失われます。元に戻せません。"
         )
         confirmed = st.checkbox(
-            f"「{selected.name}」を削除することを理解しました", key=f"confirm_del{company_id}"
+            f"「{as_text(selected.name)}」を削除することを理解しました", key=f"confirm_del{company_id}"
         )
         if st.button("削除する", disabled=not confirmed, type="secondary") and run_write(
             lambda: selection.delete_company(company_id),
-            success=f"「{selected.name}」を削除しました。",
+            success=f"「{as_text(selected.name)}」を削除しました。",
         ):
             st.rerun()
 
@@ -404,7 +404,10 @@ elif page == "ES管理":
     st.caption(f"{len(shown)} / {len(all_answers)} 件")
 
     for answer in shown:
-        title = f"[{answer.category}] {answer.question[:40]}（{answer.company_name or '汎用'}）"
+        # expander の見出しは Markdown として描画される
+        title = (
+            f"[{answer.category}] {as_text(answer.question[:40])}（{as_text(answer.company_name) or '汎用'}）"
+        )
         with st.expander(title):
             new_text = st.text_area(
                 "回答",
