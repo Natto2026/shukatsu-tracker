@@ -8,7 +8,9 @@ version = "0.7.0"
 description = "就活の選考状況をローカルで一元管理・分析するツール"
 requires-python = ">=3.11"
 dependencies = [
-    "streamlit>=1.36",
+    # width="stretch" を st.dataframe と st.altair_chart に渡している。
+    # st.dataframe は 1.49、st.altair_chart は 1.51 からこの引数を受け取る。
+    "streamlit>=1.51",
     "pandas>=2.0",
     # app.py が直接 import する。streamlit の依存として入ってくるが、
     # 直接使うものは自分で宣言する（streamlit 側が外しても壊れないように）。
