@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### Changed
+- scripts/demo_data.py の研究内容のサンプル文を、実在の研究を連想させない架空の題材に差し替えた（デモデータは内容もすべて架空にする）
 - `pyproject.toml` に `readme`・`license`(MIT)・`license-files`・`authors` を追加。SPDX 形式の `license` に合わせて、ビルドに使う setuptools の下限を 77 に引き上げた
 - `# pragma: no cover` を付けていながら網羅率を計測する設定がなかったため、`pytest-cov` を dev 依存に、coverage の設定を pyproject.toml に追加。CI の SQLite のテストで網羅率を出力する（記録のみで、しきい値では落とさない）
 - CONTRIBUTING.md のブランチ運用に、適用範囲(0.7.0 から。それ以前の PR は main 向き)と、1人の開発でこの運用を置いている理由を追記。Issue 番号をブランチ名に入れるのは対応する Issue がある場合、と明記した
