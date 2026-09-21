@@ -92,6 +92,7 @@
 | 登録した企業がダッシュボードに出る | `test_dashboard_shows_registered_company` |
 | 描画しただけでは書き換えない（読めない締切を壊さない） | `test_rendering_does_not_destroy_an_unreadable_deadline`、`test_saving_without_edits_keeps_an_unreadable_deadline` |
 | 別の場所の更新を古い表示で戻さない | `test_rendering_does_not_revert_an_out_of_band_update`、`test_a_stale_tab_cannot_overwrite_a_newer_change` |
+| 古い表示への入力は反映せず、そのことを知らせる。更新されていない行の編集は通す。最新の表示からの保存では警告しない | `test_a_stale_tab_is_told_that_its_edit_was_not_saved`、`test_an_edit_on_an_untouched_row_is_still_saved_from_a_stale_tab`、`test_saving_a_fresh_tab_does_not_warn` |
 | 入力エラーは例外ではなく文面で出る | `test_duplicate_company_name_shows_a_message_not_a_traceback`、`test_blank_company_name_is_reported` |
 | 削除は確認しないと押せない。確認すれば消える | `test_delete_is_disabled_until_confirmed`、`test_delete_works_once_confirmed` |
 | セッションごとに接続を持ち、別接続から書き込みが見える | `test_each_session_opens_its_own_connection`、`test_write_through_the_app_is_visible_to_another_connection` |
