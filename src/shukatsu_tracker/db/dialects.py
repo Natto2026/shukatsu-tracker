@@ -28,6 +28,7 @@ class Dialect(ABC):
     name: str
     placeholder: str
     supports_returning: bool
+    begin_sql: str = "BEGIN"
 
     @abstractmethod
     def connect(self, target: str) -> Any:
@@ -56,6 +57,10 @@ class SqliteDialect(Dialect):
     name = "sqlite"
     placeholder = "?"
     supports_returning = False
+    # 境界は書き込みにしか使わないので、開始時に書き込みロックを取る。既定の
+    # BEGIN（DEFERRED）だと、境界の中で読んでから書く間に別の接続が書き込めてしまい、
+    # そのあとの自分の書き込みは待たされずに「database is locked」で失敗する。
+    begin_sql = "BEGIN IMMEDIATE"
 
     def connect(self, target: str) -> sqlite3.Connection:
         path = Path(target)
