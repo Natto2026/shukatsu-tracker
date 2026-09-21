@@ -285,6 +285,26 @@ class TestEsLibraryFilter:
         assert not [e.label for e in at.expander if "志望動機" in e.label]
 
 
+class TestLabels:
+    def test_review_page_title_matches_the_menu(self, app_db):
+        """メニューの項目名とページの題がずれていないこと。"""
+        at = open_page(app_db, "添削")
+        assert [t.value for t in at.title] == ["添削"]
+
+    def test_funnel_table_has_no_english_heading(self, app_db):
+        """分析ページの表の見出しに、内部の列名が出ていないこと。"""
+        _, step_id = seed_company(app_db)
+        database = open_db(app_db)
+        try:
+            SelectionService(database).update_step(step_id, result="通過")
+        finally:
+            database.close()
+        at = open_page(app_db, "分析")
+        funnel = at.dataframe[-1].value
+        assert funnel.index.name == "選考ステップ"
+        assert "step" not in [funnel.index.name, *funnel.columns]
+
+
 class TestConnectionScope:
     def test_each_session_opens_its_own_connection(self, app_db):
         """セッションごとに別の接続を持つこと。共有すると書き込みが干渉する。"""
