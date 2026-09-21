@@ -285,6 +285,88 @@ class TestEsLibraryFilter:
         assert not [e.label for e in at.expander if "志望動機" in e.label]
 
 
+class TestCsvImport:
+    """取り込みは、要約を見せてから、押されたときにだけ書くこと。"""
+
+    CSV = (
+        "企業名,業界,ステップ,締切,結果,パスワード\n"
+        "アオゾラ電機,メーカー,ES,2026-10-01,通過,hunter2\n"
+        "アオゾラ電機,,1次面接,,,\n"
+        "ミカヅキ銀行,金融,ES,10月5日,,\n"
+    )
+
+    @staticmethod
+    def company_names(path) -> list[str]:
+        database = open_db(path)
+        try:
+            return [c.name for c in SelectionService(database).companies()]
+        finally:
+            database.close()
+
+    def upload(self, app_db, text: str, codec: str = "cp932") -> AppTest:
+        at = open_page(app_db, "取り込み")
+        at.file_uploader[0].set_value(("export.csv", text.encode(codec), "text/csv")).run()
+        assert not at.exception, at.exception
+        return at
+
+    def test_summary_is_shown_and_nothing_is_written_until_confirmed(self, app_db):
+        at = self.upload(app_db, self.CSV)
+        metrics = {m.label: m.value for m in at.metric}
+        assert metrics == {"追加される企業": "1 社", "追加されるステップ": "2 件", "取り込まない行": "1 行"}
+        tables = [frame.value for frame in at.dataframe]
+        skipped = [t for t in tables if "理由" in t.columns and "行" in t.columns][0]
+        assert list(skipped["行"]) == [4]
+        assert "10月5日" in skipped["理由"].iloc[0]
+        ignored = [t for t in tables if list(t.columns) == ["見出し", "理由"]][0]
+        assert list(ignored["見出し"]) == ["パスワード"]
+        assert "hunter2" not in " ".join(t.to_string() for t in tables)
+        assert self.company_names(app_db) == []
+
+    def test_confirming_writes_what_the_summary_showed(self, app_db):
+        at = self.upload(app_db, self.CSV)
+        [b for b in at.button if b.label == "この内容で取り込む"][0].click().run()
+        assert not at.exception, at.exception
+        assert self.company_names(app_db) == ["アオゾラ電機"]
+        assert any("1 社・2 件のステップを取り込みました" in s.value for s in at.success)
+        at.run()
+        assert at.file_uploader[0].value is None, "取り込み後は選択済みのファイルを外す"
+        assert not [b for b in at.button if b.label == "この内容で取り込む"]
+
+    def test_unreadable_file_shows_a_message_not_a_traceback(self, app_db):
+        at = self.upload(app_db, "名前,ステップ\nアオゾラ電機,ES\n")
+        assert any("企業名" in e.value for e in at.error)
+        assert not [b for b in at.button if b.label == "この内容で取り込む"]
+
+    def test_a_summary_that_went_stale_is_not_applied(self, app_db):
+        """要約を出したあとで登録内容が変わったら、押されても書かずに知らせること。
+
+        見せた要約と違う内容を、確認なしに書かない。残りの企業だけを黙って入れることもしない。
+        """
+        at = self.upload(app_db, "企業名,ステップ\nアオゾラ電機,ES\nコダマ製作所,ES\n")
+        database = open_db(app_db)
+        try:
+            SelectionService(database).add_company(
+                Company(name="アオゾラ電機", memo="先に登録"), with_default_steps=False
+            )
+        finally:
+            database.close()
+
+        [b for b in at.button if b.label == "この内容で取り込む"][0].click().run()
+        assert not at.exception, at.exception
+        assert any("取り込みは行っていません" in w.value for w in at.warning)
+        assert self.company_names(app_db) == ["アオゾラ電機"]
+        assert {m.label: m.value for m in at.metric}["追加される企業"] == "1 社"
+
+        [b for b in at.button if b.label == "この内容で取り込む"][0].click().run()
+        assert not at.exception, at.exception
+        database = open_db(app_db)
+        try:
+            stored = {c.name: c.memo for c in SelectionService(database).companies()}
+        finally:
+            database.close()
+        assert stored == {"アオゾラ電機": "先に登録", "コダマ製作所": ""}
+
+
 class TestLabels:
     def test_review_page_title_matches_the_menu(self, app_db):
         """メニューの項目名とページの題がずれていないこと。"""
