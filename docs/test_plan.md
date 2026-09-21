@@ -72,6 +72,13 @@
 | 途中で失敗した適用は巻き戻る | `test_a_failing_migration_is_rolled_back` |
 | 外部キー制約が効いている | `test_foreign_keys_are_enforced` |
 
+### 接続（`tests/test_connection.py`）
+
+| 観点 | テスト |
+|---|---|
+| 未対応の接続先・psycopg の未導入・届かない PostgreSQL・開けない SQLite ファイルは、どれも共通の例外になる | `test_unsupported_scheme_is_translated`、`test_missing_postgres_driver_is_translated`、`test_unreachable_postgres_is_translated_without_leaking_the_target`、`test_sqlite_file_that_cannot_be_opened_is_translated` |
+| 接続に失敗しても画面は例外ではなく文面を出し、接続文字列の中身を出さない | `test_app_shows_a_message_not_a_traceback` |
+
 ### トランザクション（`tests/test_transactions.py`）
 
 | 観点 | テスト |
