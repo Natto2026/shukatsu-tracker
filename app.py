@@ -219,6 +219,13 @@ elif page == "企業管理":
             "日付を選び直すまで、その値はそのまま保存されます。"
         )
 
+    # 前回この画面に出した値を控えておく。保存を押した再実行では入力欄が最新の値で
+    # 作り直される（下の key）ため、古い表示への入力は届かない。届かなかったことを
+    # 利用者に知らせるには、入力欄とは別に「何を見せていたか」を持つ必要がある。
+    previously_shown: dict[int, tuple[str | None, str]] = st.session_state.get("steps_shown", {})
+    now_shown = {s.id or -1: (s.deadline, s.result) for s in steps}
+    st.session_state["steps_shown"] = now_shown
+
     with st.form("edit_steps"):
         edited: list[tuple[int, date | None, str, str | None, str]] = []
         for step in steps:
@@ -245,16 +252,14 @@ elif page == "企業管理":
             edited.append((step.id or -1, new_deadline, new_result, step.deadline, step.result))
 
         if st.form_submit_button("選考ステップを保存", type="primary"):
-            current = {s.id: s for s in selection.steps_of(company_id)}
+            # 押した時点の表示と、いま読み直した値を突き合わせる。ずれている行は
+            # 入力欄が作り直されており、下の edited には最新の値しか入っていない
+            # （＝新しい値を上書きすることはない）。消えた行も同じ扱いにする。
+            outdated = sum(
+                1 for step_id, shown in previously_shown.items() if now_shown.get(step_id) != shown
+            )
             changed = 0
-            conflicted = 0
             for step_id, new_deadline, new_result, old_deadline, old_result in edited:
-                latest = current.get(step_id)
-                if latest is None:
-                    continue
-                if latest.deadline != old_deadline or latest.result != old_result:
-                    conflicted += 1
-                    continue
                 fields: dict[str, object] = {}
                 rendered = analytics.parse_date(old_deadline)
                 # 表示していた値と違うものだけを書く。読めない締切に
@@ -266,13 +271,16 @@ elif page == "企業管理":
                 if fields:
                     selection.update_step(step_id, **fields)  # type: ignore[arg-type]
                     changed += 1
-            if conflicted:
+            if outdated:
                 flash(
-                    f"{conflicted} 件は表示後に別の場所で更新されていたため保存しませんでした。"
-                    "最新の内容を読み込みました。",
+                    f"{outdated} 件は表示後に他の場所で更新されたため、その行への入力は反映していません。"
+                    "最新の値を表示しています。",
                     "warning",
                 )
-            flash(f"{changed} 件を保存しました。" if changed else "変更はありませんでした。", "info")
+            if changed:
+                flash(f"{changed} 件を保存しました。", "info")
+            elif not outdated:
+                flash("変更はありませんでした。", "info")
             st.rerun()
 
     with st.form("add_step", clear_on_submit=True):
