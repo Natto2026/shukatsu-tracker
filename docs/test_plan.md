@@ -105,6 +105,7 @@
 | 入力エラーは例外ではなく文面で出る | `test_duplicate_company_name_shows_a_message_not_a_traceback`、`test_blank_company_name_is_reported` |
 | ES管理の絞り込みが効く（判定はサービス層の検索） | `test_keyword_narrows_the_list` |
 | 利用者が入れた文字列を、ラベルや通知で Markdown として解釈させない | `TestUserTextIsNotMarkdown` |
+| メニューの項目名とページの題が揃い、表の見出しに内部の列名が出ない | `test_review_page_title_matches_the_menu`、`test_funnel_table_has_no_english_heading` |
 | 削除は確認しないと押せない。確認すれば消える | `test_delete_is_disabled_until_confirmed`、`test_delete_works_once_confirmed` |
 | セッションごとに接続を持ち、別接続から書き込みが見える | `test_each_session_opens_its_own_connection`、`test_write_through_the_app_is_visible_to_another_connection` |
 | 保存先の表示にパスワードや絶対パスが出ない | `TestTargetIsNotLeaked` |
