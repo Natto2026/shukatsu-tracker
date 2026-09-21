@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.6", "mypy>=1.10"]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.10"]
 # 通信する評価先を使う場合だけ必要。既定の書き出しのみなら不要。
 llm = ["anthropic>=1.0"]
 # サーバー型の DB を使う場合だけ必要。既定の SQLite なら不要。
@@ -32,6 +32,16 @@ shukatsu_tracker = ["db/migrations/*.sql", "review/criteria/*.toml", "review/cri
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+# 計測は `python -m pytest --cov` のときだけ走る。ふだんの pytest は計測しない。
+source = ["shukatsu_tracker"]
+branch = true
+
+[tool.coverage.report]
+# `# pragma: no cover` の行は既定で除外される（依存未導入の分岐や、失敗時の診断用の行）。
+show_missing = true
+skip_covered = true
 
 [tool.mypy]
 # 対象バージョンは固定しない（実行している Python に合わせる）。

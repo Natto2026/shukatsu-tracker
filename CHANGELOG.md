@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### Changed
+- `# pragma: no cover` を付けていながら網羅率を計測する設定がなかったため、`pytest-cov` を dev 依存に、coverage の設定を pyproject.toml に追加。CI の SQLite のテストで網羅率を出力する（記録のみで、しきい値では落とさない）
 - CONTRIBUTING.md のブランチ運用に、適用範囲(0.7.0 から。それ以前の PR は main 向き)と、1人の開発でこの運用を置いている理由を追記。Issue 番号をブランチ名に入れるのは対応する Issue がある場合、と明記した
 - 文書の取り残しを実装と規約に合わせた。docs/architecture.md の開発フロー（develop／release の流れ）と構成ツリー（`scripts/capture_screenshots.py`）、CONTRIBUTING.md のスクリーンショット更新手順（自動撮影スクリプト）、README の finance.toml 抜粋の `emphasis`・SQL を書く場所の説明・`SHUKATSU_REVIEW_MODEL` の既定値、docs/data_flow.md の書き出しの説明
 - ES管理の絞り込みを `EsService.search` に戻した。画面が同じ判定（カテゴリとキーワード）を自前で持っており、「UI にロジックを書かない」という規約とサービス層の検索の両方から外れていた
