@@ -9,7 +9,7 @@ import pytest
 from shukatsu_tracker import constants
 from shukatsu_tracker.db import DatabaseError, DuplicateKeyError, StepRepository
 from shukatsu_tracker.models import Company, EsAnswer
-from shukatsu_tracker.services import StepChange
+from shukatsu_tracker.services import StaleAnswerError, StepChange
 
 
 def days_from_today(offset: int) -> str:
@@ -172,6 +172,29 @@ class TestEsService:
     def test_negative_char_limit_is_rejected(self, es):
         with pytest.raises(ValueError):
             es.add(EsAnswer(question="設問", char_limit=-1))
+
+    def test_update_refuses_to_overwrite_a_text_that_changed_since_it_was_shown(self, es):
+        """表示していた本文と違えば書かない。古い表示からの保存で新しい本文を潰さないため。"""
+        answer_id = es.add(EsAnswer(question="志望動機", answer="初稿"))
+        es.update_text(answer_id, "第二稿")
+        with pytest.raises(StaleAnswerError):
+            es.update_text(answer_id, "古いタブの編集", expected="初稿")
+        stored = es.answer(answer_id)
+        assert stored is not None
+        assert stored.answer == "第二稿"
+
+    def test_update_writes_when_the_shown_text_is_still_current(self, es):
+        answer_id = es.add(EsAnswer(question="志望動機", answer="初稿"))
+        es.update_text(answer_id, "第二稿", expected="初稿")
+        stored = es.answer(answer_id)
+        assert stored is not None
+        assert stored.answer == "第二稿"
+
+    def test_update_of_a_deleted_answer_is_reported(self, es):
+        answer_id = es.add(EsAnswer(question="志望動機", answer="初稿"))
+        es.delete(answer_id)
+        with pytest.raises(ValueError, match="見つかりません"):
+            es.update_text(answer_id, "第二稿", expected="初稿")
 
     def test_search_by_category_and_keyword(self, es):
         es.add(EsAnswer(question="学生時代", category="ガクチカ", answer="体育会の活動"))

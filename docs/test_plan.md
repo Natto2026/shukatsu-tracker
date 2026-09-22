@@ -53,6 +53,7 @@
 | 追加したステップは末尾に付く | `test_added_step_goes_to_the_end` |
 | 追加するステップの並び順は、書き込みと同じ境界の中で読む | `test_add_step_reads_the_order_inside_the_transaction` |
 | 空のステップ名・未定義の結果は拒否 | `test_blank_step_name_is_rejected`、`test_undefined_result_is_rejected` |
+| 回答の本文は、表示していた本文と一致するときだけ書き換える。消えた回答は文面で伝える | `test_update_refuses_to_overwrite_a_text_that_changed_since_it_was_shown`、`test_update_writes_when_the_shown_text_is_still_current`、`test_update_of_a_deleted_answer_is_reported` |
 | 複数ステップの更新は全行を検証してから1つの境界で書く。途中で失敗したら何も残らない。書いた行数を返す | `test_updating_many_steps_validates_every_row_before_writing`、`test_a_failure_midway_leaves_no_step_updated`、`test_updating_many_steps_counts_only_rows_with_a_change` |
 | 締切を消しても結果には触れない | `test_deadline_can_be_cleared_without_touching_the_result` |
 | 変更なしの更新は何もしない | `test_updating_nothing_is_a_no_op` |
@@ -129,6 +130,7 @@
 | 入力エラーは例外ではなく文面で出る | `test_duplicate_company_name_shows_a_message_not_a_traceback`、`test_blank_company_name_is_reported` |
 | 選考ステップの保存が途中で失敗しても、文面で伝え、どの行も書かれない | `test_a_failed_step_save_shows_a_message_and_writes_nothing` |
 | ES管理の絞り込みが効く（判定はサービス層の検索） | `test_keyword_narrows_the_list` |
+| ES 本文でも古いタブが新しい変更を潰さず、そのことを知らせる。最新の表示からの保存は通る | `test_a_stale_tab_cannot_overwrite_a_newer_answer`、`test_saving_from_a_fresh_tab_still_works` |
 | 利用者が入れた文字列を、ラベルや通知で Markdown として解釈させない | `TestUserTextIsNotMarkdown` |
 | メニューの項目名とページの題が揃い、表の見出しに内部の列名が出ない | `test_review_page_title_matches_the_menu`、`test_funnel_table_has_no_english_heading` |
 | 削除は確認しないと押せない。確認すれば消える | `test_delete_is_disabled_until_confirmed`、`test_delete_works_once_confirmed` |
