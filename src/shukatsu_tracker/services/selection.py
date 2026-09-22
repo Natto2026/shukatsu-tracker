@@ -200,15 +200,18 @@ class SelectionService:
             raise ValueError("ステップ名は必須です")
         checked_deadline = _validated_deadline(deadline)
         # 並び順を決める読み取りも境界の中で行う。外で読むと、読んでから書くまでの
-        # 間に別の追加が割り込み、同じ並び順が2つできる。
+        # 間に別の追加が割り込み、同じ並び順が2つできる。SQLite は境界の開始で
+        # 書き込みロックを取るが、PostgreSQL は取らないので、企業の行をロックして
+        # 同じ企業への追加を直列化する。
         with transaction(self._db):
-            existing = self._steps.list_for_company(company_id)
+            if not self._companies.lock(company_id):
+                raise ValueError("企業が見つかりません。別の場所で削除された可能性があります")
             return self._steps.add(
                 Step(
                     company_id=company_id,
                     name=label,
                     deadline=checked_deadline,
-                    sort_order=len(existing),
+                    sort_order=self._steps.next_sort_order(company_id),
                 )
             )
 
