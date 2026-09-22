@@ -85,12 +85,18 @@ class Database:
         self._depth = max(0, self._depth - 1)
 
     def commit(self) -> None:
-        self._raw.execute("COMMIT")
-        self._depth = 0
+        # 失敗しても深さは戻す。戻さないと、次の境界が「入れ子」と誤認されて
+        # BEGIN も ROLLBACK も発行されず、以後の書き込みが宙に浮いたままになる。
+        try:
+            self._raw.execute("COMMIT")
+        finally:
+            self._depth = 0
 
     def rollback(self) -> None:
-        self._raw.execute("ROLLBACK")
-        self._depth = 0
+        try:
+            self._raw.execute("ROLLBACK")
+        finally:
+            self._depth = 0
 
     # --- その他 -------------------------------------------------------
 

@@ -111,6 +111,9 @@
 | サービス経由の書き込みは直列化される | `test_service_level_writes_are_serialised` |
 | 重複で失敗しても先に入れた行は残る | `test_a_duplicate_failure_leaves_earlier_rows_intact` |
 | SQLite の境界は開始時に書き込みロックを取り、別の接続の書き込みを待たせる | `test_sqlite_boundary_takes_the_write_lock_at_the_start` |
+| COMMIT が失敗しても深さが戻り、書き込みロックが解放される | `test_a_failed_commit_resets_the_depth_and_releases_the_lock` |
+| COMMIT の失敗のあとも、次の境界は正しく巻き戻り・確定する | `test_the_next_boundary_still_rolls_back_after_a_failed_commit` |
+| ドライバが巻き戻し済みの COMMIT 失敗でも、元の例外を隠さない | `test_a_commit_the_driver_already_rolled_back_does_not_mask_the_error` |
 
 ### 画面（`tests/test_app_behaviour.py`、`tests/test_app_smoke.py`）
 

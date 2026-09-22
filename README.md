@@ -229,10 +229,11 @@ v0.6.0 の前に、動いているように見えるアプリを疑って総点�
 | 重複した企業名を入れると、画面に生の例外が出る | ドライバ固有の例外をそのまま上げていた | 共通の型に翻訳し、利用者に伝わる文面にする | `test_duplicate_company_name_shows_a_message_not_a_traceback` |
 | ボタン1つで企業と選考ステップがまとめて消える | 確認のない削除ボタン | 確認のチェックを挟み、何が失われるかを明示する | `test_delete_is_disabled_until_confirmed` |
 | 保存先の表示に、利用者名やパスワードが出る | 接続文字列とファイルパスをそのまま表示していた | 種別と最小限の識別子だけを返す | `test_connection_string_never_shows_the_password` |
+| COMMIT が一度失敗すると、以後の書き込みが確定も巻き戻しもされず、別のセッションの起動が「database is locked」で止まる | COMMIT の失敗時に深さを戻しておらず、次の境界が入れ子と誤認されて BEGIN も ROLLBACK も発行されなかった | COMMIT・ROLLBACK は失敗しても深さを戻す。COMMIT が失敗したら ROLLBACK を試みてから元の例外を上げる | `test_a_failed_commit_resets_the_depth_and_releases_the_lock`、`test_the_next_boundary_still_rolls_back_after_a_failed_commit` |
 
 このうち最初の2つは、1人で1つのタブから使っている限り起きません。複数のセッションや
 スレッドから使ったときにだけ現れるため、テストも並行に書く形で再現しています。
-どの修正が何を直したかは [CHANGELOG.md](CHANGELOG.md) の 0.6.0 に対応しています。
+どの修正が何を直したかは [CHANGELOG.md](CHANGELOG.md) の 0.6.0 以降の Fixed に対応しています。
 
 ## 開発
 
