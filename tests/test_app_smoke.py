@@ -17,6 +17,8 @@ from shukatsu_tracker.services import SelectionService
 APP_PATH = str(Path(__file__).parent.parent / "app.py")
 PAGES = ["ダッシュボード", "企業管理", "ES管理", "添削", "分析", "取り込み", "書き出し"]
 
+pytestmark = pytest.mark.ui
+
 
 @pytest.fixture
 def app(tmp_path, monkeypatch):
