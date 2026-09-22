@@ -15,7 +15,7 @@ from streamlit.testing.v1 import AppTest
 from shukatsu_tracker import db
 from shukatsu_tracker.db import CompanyRepository, DatabaseError, StepRepository, transaction
 from shukatsu_tracker.models import Company, EsAnswer
-from shukatsu_tracker.services import EsService, SelectionService
+from shukatsu_tracker.services import EsService, ReviewService, SelectionService
 
 APP_PATH = str(Path(__file__).parent.parent / "app.py")
 
@@ -335,13 +335,55 @@ class TestDestructiveActionsNeedConfirmation:
     def test_delete_is_disabled_until_confirmed(self, app_db):
         company_id, _ = seed_company(app_db)
         at = open_page(app_db, "企業管理")
-        delete_buttons = [b for b in at.button if b.label == "削除する"]
-        assert delete_buttons, "削除ボタンが見つからない"
-        assert delete_buttons[0].disabled
+        # 「削除する」はステップの確認にもあるので、企業のものはキーで選ぶ
+        assert at.button(key="delete_company").disabled
 
         database = open_db(app_db)
         try:
             assert SelectionService(database).company(company_id) is not None
+        finally:
+            database.close()
+
+    def test_step_delete_is_behind_a_confirmation(self, app_db):
+        """ステップの削除は、何が失われるかを見せた上の「削除する」だけで行えること。"""
+        company_id, step_id = seed_company(app_db)
+        at = open_page(app_db, "企業管理")
+
+        assert not [b for b in at.button if b.label == "削除"], "1クリックで消える削除ボタンが残っている"
+        button = at.button(key=f"delstep{step_id}")
+        assert button.label == "削除する"
+        assert any("元に戻せません" in w.value for w in at.warning)
+
+        button.click().run()
+        assert not at.exception, at.exception
+        database = open_db(app_db)
+        try:
+            assert SelectionService(database).steps_of(company_id) == []
+        finally:
+            database.close()
+
+    def test_review_delete_is_behind_a_confirmation(self, app_db):
+        """所見の削除も同じ扱いであること。"""
+        answer_id = seed_answer(app_db)
+        database = open_db(app_db)
+        try:
+            es = EsService(database)
+            stored = es.answer(answer_id)
+            assert stored is not None
+            review_id = ReviewService(database).run(stored).id
+        finally:
+            database.close()
+        at = open_page(app_db, "添削")
+
+        assert not [b for b in at.button if b.label == "削除"]
+        button = at.button(key=f"rm_review_{review_id}")
+        assert button.label == "削除する"
+
+        button.click().run()
+        assert not at.exception, at.exception
+        database = open_db(app_db)
+        try:
+            assert ReviewService(database).history(answer_id) == []
         finally:
             database.close()
 
@@ -351,7 +393,7 @@ class TestDestructiveActionsNeedConfirmation:
         confirm = [c for c in at.checkbox if "削除することを理解しました" in c.label]
         assert confirm, "確認のチェックが見つからない"
         confirm[0].set_value(True).run()
-        [b for b in at.button if b.label == "削除する"][0].click().run()
+        at.button(key="delete_company").click().run()
         assert not at.exception, at.exception
 
         database = open_db(app_db)
