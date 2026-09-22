@@ -151,9 +151,11 @@ PostgreSQL を使う場合は `pip install -e ".[postgres]"` が必要です。�
 ```bash
 git clone https://github.com/Natto2026/shukatsu-tracker.git
 cd shukatsu-tracker
-pip install -e ".[dev]"
+pip install -e ".[dev]" -c constraints.txt
 streamlit run app.py
 ```
+
+`constraints.txt` は検証済みの版に固定するためのもので、CI も同じ指定で入れています。
 
 ブラウザで http://localhost:8501 が開きます。
 
@@ -256,8 +258,10 @@ python -m pytest --cov    # 網羅率も見る場合（CI でも出力してい�
 「古い表示で新しい変更を潰さないこと」を確認します。
 観点とテストの対応は [docs/test_plan.md](docs/test_plan.md) にまとめています。
 
-CI では Python 3.11 / 3.13 の SQLite に加えて、同じテスト一式を実際の
-PostgreSQL に対しても走らせています。
+CI では Python 3.11 / 3.12 / 3.13 の SQLite に加えて、同じテスト一式を実際の
+PostgreSQL に対しても走らせています。依存は `constraints.txt` の版に固定しているので、
+上流の更新で CI が勝手に赤くなることはありません。上げるときは手元で全部通してから
+`constraints.txt` を書き換えます。
 
 ```bash
 # 手元で PostgreSQL に対して走らせる場合
