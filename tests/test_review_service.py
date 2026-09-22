@@ -44,6 +44,26 @@ def test_run_saves_the_review(reviewer, saved_answer):
     assert reviewer.history(saved_answer.id or -1) == [review]
 
 
+def test_usage_is_stored_with_the_review(reviewer, saved_answer):
+    """実行先が返したトークン数が、所見と一緒に残ること（あとからコストを確認するため）。"""
+
+    class CountingProvider(StubProvider):
+        def review(self, request, prompt):
+            return ReviewResult(
+                provider=self.name, prompt=prompt, text=self.text, input_tokens=1234, output_tokens=567
+            )
+
+    review = reviewer.run(saved_answer, provider=CountingProvider())
+    assert (review.input_tokens, review.output_tokens) == (1234, 567)
+    stored = reviewer.history(saved_answer.id or -1)[0]
+    assert (stored.input_tokens, stored.output_tokens) == (1234, 567)
+
+
+def test_usage_is_absent_for_the_offline_provider(reviewer, saved_answer):
+    review = reviewer.run(saved_answer)
+    assert (review.input_tokens, review.output_tokens) == (None, None)
+
+
 def test_prompt_is_stored_with_the_result(reviewer, saved_answer):
     review = reviewer.run(saved_answer, provider=StubProvider())
     assert saved_answer.question in review.prompt

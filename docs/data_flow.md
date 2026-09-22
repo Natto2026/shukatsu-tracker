@@ -92,6 +92,8 @@ erDiagram
         text prompt "組み立てた依頼文"
         text result "所見"
         text answer_snapshot "点検した時点の本文"
+        int input_tokens "実行にかかった入力トークン数（通信しない実行先は NULL）"
+        int output_tokens "同じく出力トークン数"
         text created_at
     }
     schema_migrations {

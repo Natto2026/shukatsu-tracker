@@ -140,17 +140,28 @@ def apply_pending(db: Database, directory: Path = MIGRATIONS_DIR) -> list[Migrat
                 f"INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, {now_expression})"
             )
             with transaction(db):
+                # 境界を開く（SQLite では書き込みロックを取る）までの間に、別の
+                # プロセスが同じ版を適用し終えていることがある。ALTER TABLE のように
+                # 二度流せない文を含む版もあるため、記録を見直してから流す。
+                if _is_recorded(db, migration.version):
+                    continue
                 for statement in migration.statements():
                     db.execute(statement)
                 db.execute(record_sql, (migration.version, migration.name))
         except DuplicateKeyError:
-            # 別のプロセスが同じバージョンを先に適用した。DDL は IF NOT EXISTS
-            # で冪等なので、記録の重複だけを無視して次へ進む。
+            # 別のプロセスが同じバージョンを先に適用した（PostgreSQL は境界の開始で
+            # ロックを取らないため、上の見直しをすり抜けることがある）。DDL は
+            # IF NOT EXISTS で冪等なので、記録の重複だけを無視して次へ進む。
             continue
         except Exception as error:
             raise MigrationError(f"{migration.path.name} の適用に失敗しました: {error}") from error
         applied.append(migration)
     return applied
+
+
+def _is_recorded(db: Database, version: str) -> bool:
+    row = db.fetchone("SELECT version FROM schema_migrations WHERE version = ?", (version,))
+    return row is not None
 
 
 def _first(row: object) -> str:
