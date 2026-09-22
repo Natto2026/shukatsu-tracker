@@ -67,6 +67,7 @@ main / develop / 作業ブランチの3層で運用する。
     適用済みバージョンを記録する INSERT、db/database.py が組み立てる INSERT / UPDATE の
     ひな形がこれにあたる。テーブルごとの読み書きをここに足さない
 - 列名を動的に組み立てる場合は、リポジトリの `writable` に列挙した名前だけを通す
+- 選択肢（constants）と締切の書式の検証は services/ に置く。画面や CSV の取り込みだけに置かない
 - **スキーマ変更は新しい migration ファイルで行う**。適用済みの .sql は編集しない
 - 書き込みは services/ 側で `transaction()` に包む。repositories を裸で呼ばない
 - SQL は `?` で書く。方言差は db/dialects.py に足す。SQL ファイルを方言ごとに分けない

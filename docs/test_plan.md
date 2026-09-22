@@ -49,6 +49,8 @@
 |---|---|
 | 企業を追加すると既定の選考ステップも入る。省略もできる | `test_default_steps_are_created`、`test_default_steps_can_be_skipped` |
 | 企業名は前後の空白を除き、空なら拒否 | `test_name_is_trimmed_and_required` |
+| 業界・志望度・応募経路・適性検査は選択肢にある値だけを受け付ける（追加も更新も）。更新でも企業名は必須で、URL とメールは空白を除く | `TestCompanyValidation` |
+| 読めない書式の締切は空にせず拒否する。読める締切は ISO 形式で保存する | `test_an_unreadable_deadline_is_rejected_not_nulled`、`test_a_readable_deadline_is_stored_in_iso_form` |
 | 重複で失敗したとき、ステップだけが残らない | `test_duplicate_name_leaves_no_orphan_steps` |
 | 追加したステップは末尾に付く | `test_added_step_goes_to_the_end` |
 | 追加するステップの並び順は、書き込みと同じ境界の中で読む | `test_add_step_reads_the_order_inside_the_transaction` |
@@ -129,6 +131,7 @@
 | 別の場所の更新を古い表示で戻さない | `test_rendering_does_not_revert_an_out_of_band_update`、`test_a_stale_tab_cannot_overwrite_a_newer_change` |
 | 古い表示への入力は反映せず、そのことを知らせる。更新されていない行の編集は通す。最新の表示からの保存では警告しない | `test_a_stale_tab_is_told_that_its_edit_was_not_saved`、`test_an_edit_on_an_untouched_row_is_still_saved_from_a_stale_tab`、`test_saving_a_fresh_tab_does_not_warn` |
 | 入力エラーは例外ではなく文面で出る | `test_duplicate_company_name_shows_a_message_not_a_traceback`、`test_blank_company_name_is_reported` |
+| 選択肢にない古い値があっても画面は落ちず、黙って書き換えず、更新時に選び直すよう伝える | `TestValuesOutsideTheChoices` |
 | 選考ステップの保存が途中で失敗しても、文面で伝え、どの行も書かれない | `test_a_failed_step_save_shows_a_message_and_writes_nothing` |
 | ES管理の絞り込みが効く（判定はサービス層の検索） | `test_keyword_narrows_the_list` |
 | ES 本文でも古いタブが新しい変更を潰さず、そのことを知らせる。最新の表示からの保存は通る | `test_a_stale_tab_cannot_overwrite_a_newer_answer`、`test_saving_from_a_fresh_tab_still_works` |

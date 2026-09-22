@@ -234,6 +234,7 @@ v0.6.0 の前に、動いているように見えるアプリを疑って総点�
 | 選考ステップの保存が途中で失敗すると、前の行だけが保存されたうえに生のトレースバックが出る | 行ごとに別のトランザクションで書き、失敗を画面で捕まえていなかった | 全行を検証してから1つの境界で書く（`update_steps`）。失敗は他の書き込みと同じ経路で文面にする | `test_a_failure_midway_leaves_no_step_updated`、`test_a_failed_step_save_shows_a_message_and_writes_nothing` |
 | ES 本文を別のタブで同じ日に更新すると、古いタブの「保存」で潰される | 入力欄のキーに含めていた更新日が日付単位で、同じ日のうちの更新を見分けられなかった | キーに保存済みの本文のダイジェストを含め、表示していた本文と突き合わせてから書く。サービス層でも、表示していた本文と一致するときだけ書き換える | `test_a_stale_tab_cannot_overwrite_a_newer_answer`、`test_update_refuses_to_overwrite_a_text_that_changed_since_it_was_shown` |
 | 出力の上限で途中で切れた所見が、完成品として保存される | 応答の停止理由を「拒否」しか見ていなかった | `max_tokens` で止まった応答は保存せず、理由を伝える。実行にかかったトークン数も所見と一緒に残す | `test_a_truncated_response_is_rejected_not_saved`、`test_usage_is_stored_with_the_review` |
+| 画面以外の入口から選択肢にない値や読めない締切を保存でき、一覧や締切から黙って消える。選択肢にない値があると企業管理の画面全体が例外で落ちる | 選択肢と日付の検証が画面と CSV にしかなく、サービス層は素通しだった。画面は `list.index` で位置を引いていた | 業界・志望度・応募経路・適性検査・締切をサービス層で検証する。選択肢にない古い値は末尾に足して表示し、黙って書き換えない | `TestCompanyValidation`、`test_an_unreadable_deadline_is_rejected_not_nulled`、`TestValuesOutsideTheChoices` |
 
 このうち最初の2つは、1人で1つのタブから使っている限り起きません。複数のセッションや
 スレッドから使ったときにだけ現れるため、テストも並行に書く形で再現しています。

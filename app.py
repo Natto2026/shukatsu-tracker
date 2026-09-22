@@ -53,6 +53,18 @@ def as_text(value: str | None) -> str:
     return "" if not value else _MARKDOWN_SPECIALS.sub(r"\\\1", value)
 
 
+def with_saved(options: list[str], value: str) -> tuple[list[str], int]:
+    """選択肢と、保存済みの値の位置。
+
+    選択肢にない値（定数を変える前に保存した古いデータ）は末尾に足して表示する。
+    `list.index` で落とすと、その企業を選んだ瞬間に画面全体が例外になって編集も
+    削除もできなくなる。先頭に倒すと、保存で黙って書き換わる。
+    """
+    if value in options:
+        return options, options.index(value)
+    return [*options, value], len(options)
+
+
 def saved_token(text: str) -> str:
     """保存済みの本文を入力欄のキーに含めるための短い識別子。
 
@@ -275,10 +287,11 @@ elif page == "企業管理":
                 format="YYYY-MM-DD",
                 label_visibility="collapsed",
             )
+            result_options, result_index = with_saved(constants.STEP_RESULTS, step.result)
             new_result = c3.selectbox(
                 "結果",
-                constants.STEP_RESULTS,
-                index=constants.STEP_RESULTS.index(step.result),
+                result_options,
+                index=result_index,
                 key=f"rs:{token}",
                 label_visibility="collapsed",
             )
@@ -345,19 +358,15 @@ elif page == "企業管理":
     with st.expander("企業情報の編集"), st.form("edit_company"):
         e_name = st.text_input("企業名", value=selected.name)
         c1, c2, c3 = st.columns(3)
-        e_industry = c1.selectbox(
-            "業界", constants.INDUSTRIES, index=constants.INDUSTRIES.index(selected.industry)
-        )
-        e_priority = c2.selectbox(
-            "志望度", constants.PRIORITIES, index=constants.PRIORITIES.index(selected.priority)
-        )
-        e_route = c3.selectbox("応募経路", constants.ROUTES, index=constants.ROUTES.index(selected.route))
+        industry_options, industry_index = with_saved(constants.INDUSTRIES, selected.industry)
+        e_industry = c1.selectbox("業界", industry_options, index=industry_index)
+        priority_options, priority_index = with_saved(constants.PRIORITIES, selected.priority)
+        e_priority = c2.selectbox("志望度", priority_options, index=priority_index)
+        route_options, route_index = with_saved(constants.ROUTES, selected.route)
+        e_route = c3.selectbox("応募経路", route_options, index=route_index)
         c4, c5 = st.columns(2)
-        e_test = c4.selectbox(
-            "適性検査",
-            constants.TEST_TYPES,
-            index=constants.TEST_TYPES.index(selected.test_type),
-        )
+        test_options, test_index = with_saved(constants.TEST_TYPES, selected.test_type)
+        e_test = c4.selectbox("適性検査", test_options, index=test_index)
         e_email = c5.text_input("マイページ登録メール", value=selected.login_email)
         e_url = st.text_input("マイページURL", value=selected.mypage_url)
         e_memo = st.text_area("メモ", value=selected.memo, height=68)
