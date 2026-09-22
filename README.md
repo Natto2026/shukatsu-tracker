@@ -233,6 +233,7 @@ v0.6.0 の前に、動いているように見えるアプリを疑って総点�
 | ロック待ちの超過や接続の切断で、画面に生のトレースバックが出る。PostgreSQL を再起動すると、開いていたタブは以後の操作がすべて失敗したままになる | 翻訳していたのは一意制約と外部キーの違反だけで、BEGIN / COMMIT はそもそも翻訳を通っていなかった。死んだ接続をセッションが持ち続けていた | ドライバの例外をすべて共通の型に翻訳し、BEGIN / COMMIT / ROLLBACK も同じ経路を通す。再描画のたびに接続の生死を確かめ、死んでいれば張り直す | `test_operating_on_a_closed_connection_is_reported_as_lost`、`test_a_dead_connection_is_reopened_on_the_next_run` |
 | 選考ステップの保存が途中で失敗すると、前の行だけが保存されたうえに生のトレースバックが出る | 行ごとに別のトランザクションで書き、失敗を画面で捕まえていなかった | 全行を検証してから1つの境界で書く（`update_steps`）。失敗は他の書き込みと同じ経路で文面にする | `test_a_failure_midway_leaves_no_step_updated`、`test_a_failed_step_save_shows_a_message_and_writes_nothing` |
 | ES 本文を別のタブで同じ日に更新すると、古いタブの「保存」で潰される | 入力欄のキーに含めていた更新日が日付単位で、同じ日のうちの更新を見分けられなかった | キーに保存済みの本文のダイジェストを含め、表示していた本文と突き合わせてから書く。サービス層でも、表示していた本文と一致するときだけ書き換える | `test_a_stale_tab_cannot_overwrite_a_newer_answer`、`test_update_refuses_to_overwrite_a_text_that_changed_since_it_was_shown` |
+| 出力の上限で途中で切れた所見が、完成品として保存される | 応答の停止理由を「拒否」しか見ていなかった | `max_tokens` で止まった応答は保存せず、理由を伝える。実行にかかったトークン数も所見と一緒に残す | `test_a_truncated_response_is_rejected_not_saved`、`test_usage_is_stored_with_the_review` |
 
 このうち最初の2つは、1人で1つのタブから使っている限り起きません。複数のセッションや
 スレッドから使ったときにだけ現れるため、テストも並行に書く形で再現しています。

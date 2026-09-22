@@ -93,6 +93,7 @@
 | ファイル名が NNN_name.sql の規約に従う | `test_migration_filenames_follow_the_convention` |
 | 途中で失敗した適用は巻き戻る | `test_a_failing_migration_is_rolled_back` |
 | 外部キー制約が効いている | `test_foreign_keys_are_enforced` |
+| 一覧を読んだあとに別のプロセスが流した版は、境界の中で見直して二度流さない | `test_a_version_applied_meanwhile_is_skipped_inside_the_boundary` |
 
 ### 接続（`tests/test_connection.py`）
 
@@ -161,10 +162,12 @@
 | 設問と提出先は1行に収まり、改行で見出しや指示を差し込めない | `test_question_and_company_cannot_start_a_new_line` |
 | 補足は与えたときだけ入る。複数行の観点で表が崩れない。空入力は拒否。事実の捏造を禁じる指示が入る | `test_note_is_included_only_when_given`、`test_multiline_criteria_do_not_break_the_table`、`test_empty_input_is_rejected`、`test_system_prompt_forbids_inventing_facts` |
 | 既定の実行先は依頼文をそのまま返し、通信しないと宣言する | `test_returns_the_prompt_unchanged`、`test_declares_that_it_does_not_send_data` |
-| API の実行先は送信内容・拒否・空応答・依存やキーの欠如を扱える | `TestAnthropicProvider`、`TestExtractText` |
+| API の実行先は送信内容・拒否・空応答・依存やキーの欠如を扱える。途中で切れた所見は保存しない。使用量を結果に載せる | `TestAnthropicProvider`、`TestExtractText`、`TestExtractUsage` |
+| SDK の例外は状態コードと理由を添えた文面になる。SDK の内部の不具合を「SDK が古い」と誤案内しない | `TestErrorTranslation` |
 | モデルは環境変数で差し替えられ、未設定・空白なら既定に戻る。明示指定が環境変数より優先される | `test_model_defaults_when_the_environment_is_unset`、`test_model_can_be_overridden_by_the_environment`、`test_a_blank_environment_value_falls_back_to_the_default`、`test_an_explicit_model_wins_over_the_environment`、`test_the_environment_is_read_at_call_time_not_at_import` |
 | 実行先の一覧は通信しないものが先頭、API はキーがあるときだけ | `test_offline_provider_is_always_first`、`test_api_provider_appears_when_the_key_is_set` |
 | 所見は依頼文と本文の写しごと保存され、後の書き換えを検出する | `test_run_saves_the_review`、`test_prompt_is_stored_with_the_result`、`test_snapshot_detects_a_later_edit` |
+| 実行にかかったトークン数が所見と一緒に残る。通信しない実行先では空 | `test_usage_is_stored_with_the_review`、`test_usage_is_absent_for_the_offline_provider` |
 | 履歴は新しい順。未保存の回答は点検できない | `test_history_is_newest_first`、`test_unsaved_answer_is_rejected` |
 | 業界は企業から引き、上書きもできる | `test_industry_comes_from_the_company`、`test_industry_can_be_overridden`、`test_answer_without_a_company_has_no_industry` |
 | 既定の実行先では通信しない。回答を消すと所見も消える。所見は1件ずつ消せる | `test_default_provider_does_not_send_data`、`test_review_is_removed_with_its_answer`、`test_delete_removes_one_review` |
