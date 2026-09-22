@@ -232,6 +232,7 @@ v0.6.0 の前に、動いているように見えるアプリを疑って総点�
 | COMMIT が一度失敗すると、以後の書き込みが確定も巻き戻しもされず、別のセッションの起動が「database is locked」で止まる | COMMIT の失敗時に深さを戻しておらず、次の境界が入れ子と誤認されて BEGIN も ROLLBACK も発行されなかった | COMMIT・ROLLBACK は失敗しても深さを戻す。COMMIT が失敗したら ROLLBACK を試みてから元の例外を上げる | `test_a_failed_commit_resets_the_depth_and_releases_the_lock`、`test_the_next_boundary_still_rolls_back_after_a_failed_commit` |
 | ロック待ちの超過や接続の切断で、画面に生のトレースバックが出る。PostgreSQL を再起動すると、開いていたタブは以後の操作がすべて失敗したままになる | 翻訳していたのは一意制約と外部キーの違反だけで、BEGIN / COMMIT はそもそも翻訳を通っていなかった。死んだ接続をセッションが持ち続けていた | ドライバの例外をすべて共通の型に翻訳し、BEGIN / COMMIT / ROLLBACK も同じ経路を通す。再描画のたびに接続の生死を確かめ、死んでいれば張り直す | `test_operating_on_a_closed_connection_is_reported_as_lost`、`test_a_dead_connection_is_reopened_on_the_next_run` |
 | 選考ステップの保存が途中で失敗すると、前の行だけが保存されたうえに生のトレースバックが出る | 行ごとに別のトランザクションで書き、失敗を画面で捕まえていなかった | 全行を検証してから1つの境界で書く（`update_steps`）。失敗は他の書き込みと同じ経路で文面にする | `test_a_failure_midway_leaves_no_step_updated`、`test_a_failed_step_save_shows_a_message_and_writes_nothing` |
+| ES 本文を別のタブで同じ日に更新すると、古いタブの「保存」で潰される | 入力欄のキーに含めていた更新日が日付単位で、同じ日のうちの更新を見分けられなかった | キーに保存済みの本文のダイジェストを含め、表示していた本文と突き合わせてから書く。サービス層でも、表示していた本文と一致するときだけ書き換える | `test_a_stale_tab_cannot_overwrite_a_newer_answer`、`test_update_refuses_to_overwrite_a_text_that_changed_since_it_was_shown` |
 
 このうち最初の2つは、1人で1つのタブから使っている限り起きません。複数のセッションや
 スレッドから使ったときにだけ現れるため、テストも並行に書く形で再現しています。

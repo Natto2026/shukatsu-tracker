@@ -29,6 +29,10 @@ class LengthCheck:
         return self.limit is not None and self.length < int(self.limit * 0.8)
 
 
+class StaleAnswerError(ValueError):
+    """表示していた本文が、保存するまでの間に他の場所で更新されていた。"""
+
+
 class EsService:
     """ES 回答の保存と検索。"""
 
@@ -59,8 +63,22 @@ class EsService:
                 )
             )
 
-    def update_text(self, answer_id: int, text: str) -> None:
+    def update_text(self, answer_id: int, text: str, *, expected: str | None = None) -> None:
+        """本文を書き換える。`expected` を渡すと、いまの本文がそれと一致するときだけ書く。
+
+        表示してから保存するまでの間に別のタブや端末が更新していた場合に、古い表示
+        からの入力で新しい本文を潰さないため。判定は書き込みと同じ境界の中で行う
+        （SQLite は開始時に書き込みロックを取るので、判定と書き込みの間に割り込まれない）。
+        """
         with transaction(self._db):
+            if expected is not None:
+                current = self._answers.get(answer_id)
+                if current is None:
+                    raise ValueError("回答が見つかりません。別の場所で削除された可能性があります")
+                if current.answer != expected:
+                    raise StaleAnswerError(
+                        "表示後に他の場所で更新されたため、この入力は反映していません。最新の本文を表示しています"
+                    )
             self._answers.update(answer_id, answer=text)
 
     def delete(self, answer_id: int) -> None:
