@@ -13,7 +13,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from shukatsu_tracker import db
-from shukatsu_tracker.db import DatabaseError, StepRepository, transaction
+from shukatsu_tracker.db import CompanyRepository, DatabaseError, StepRepository, transaction
 from shukatsu_tracker.models import Company, EsAnswer
 from shukatsu_tracker.services import EsService, SelectionService
 
@@ -33,11 +33,19 @@ def open_db(path):
 
 
 def seed_company(path, *, deadline: str | None = None) -> tuple[int, int]:
+    """企業とステップを1件ずつ入れる。
+
+    読めない書式の締切は、サービス層が拒否するようになったため、検証が入る前に
+    保存された古いデータとしてリポジトリから直接書く。
+    """
     database = open_db(path)
     try:
         selection = SelectionService(database)
         company_id = selection.add_company(Company(name="テスト株式会社"), with_default_steps=False)
-        step_id = selection.add_step(company_id, "ES", deadline=deadline)
+        step_id = selection.add_step(company_id, "ES")
+        if deadline is not None:
+            with transaction(database):
+                StepRepository(database).update(step_id, deadline=deadline)
     finally:
         database.close()
     return company_id, step_id
@@ -171,6 +179,57 @@ class TestNoWriteOnRender:
         assert read_step(app_db, step_id)[1] == "通過"
         assert not any("他の場所で更新された" in w.value for w in at.warning)
         assert any("1 件を保存しました" in i.value for i in at.info)
+
+
+class TestValuesOutsideTheChoices:
+    """定数を変える前に保存した値があっても、画面が落ちず、黙って書き換えないこと。"""
+
+    def test_company_page_renders_a_legacy_value_instead_of_crashing(self, app_db):
+        company_id, step_id = seed_company(app_db)
+        database = open_db(app_db)
+        try:
+            with transaction(database):
+                CompanyRepository(database).update(company_id, priority="Z")
+                StepRepository(database).update(step_id, result="保留")
+        finally:
+            database.close()
+
+        at = open_page(app_db, "企業管理")
+        # 「志望度」は追加フォームにもあるので、編集フォーム側（末尾）を見る
+        priority = [s for s in at.selectbox if s.label == "志望度"][-1]
+        assert priority.value == "Z"
+        assert "Z" in priority.options
+        result = [s for s in at.selectbox if s.label == "結果"][0]
+        assert result.value == "保留"
+
+    def test_saving_untouched_steps_keeps_a_legacy_result(self, app_db):
+        _, step_id = seed_company(app_db)
+        database = open_db(app_db)
+        try:
+            with transaction(database):
+                StepRepository(database).update(step_id, result="保留")
+        finally:
+            database.close()
+
+        at = open_page(app_db, "企業管理")
+        [b for b in at.button if b.label == "選考ステップを保存"][0].click().run()
+        assert not at.exception, at.exception
+        assert read_step(app_db, step_id)[1] == "保留"
+
+    def test_updating_a_company_with_a_legacy_value_is_refused_with_a_message(self, app_db):
+        """古い値のまま「更新」を押すと、選択肢から選び直すよう文面で伝えること。"""
+        company_id, _ = seed_company(app_db)
+        database = open_db(app_db)
+        try:
+            with transaction(database):
+                CompanyRepository(database).update(company_id, priority="Z")
+        finally:
+            database.close()
+
+        at = open_page(app_db, "企業管理")
+        [b for b in at.button if b.label == "更新"][0].click().run()
+        assert not at.exception, at.exception
+        assert any("志望度「Z」は選択肢にありません" in e.value for e in at.error)
 
 
 class TestErrorsAreFriendly:
