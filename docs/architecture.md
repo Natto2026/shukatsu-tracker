@@ -195,7 +195,7 @@ flowchart TB
 
 Issue 起点 → develop から作業ブランチ（`feature/…` `fix/…` `docs/…` `chore/…`）を切る →
 ruff（check と format）+ mypy + pytest をローカルで通す → CHANGELOG の Unreleased に追記 →
-develop への Pull Request（CI: lint、typecheck、SQLite で 3.11/3.13、実際の PostgreSQL で同じテスト一式）
+develop への Pull Request（CI: lint、typecheck、SQLite で 3.11 / 3.12 / 3.13、実際の PostgreSQL で同じテスト一式）
 → マージ → ブランチ削除。
 
 リリースは develop から `release/X.Y.Z` を切って版番号と CHANGELOG の見出しを確定し、main へ
