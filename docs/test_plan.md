@@ -141,6 +141,7 @@
 | 利用者が入れた文字列を、ラベルや通知で Markdown として解釈させない | `TestUserTextIsNotMarkdown` |
 | メニューの項目名とページの題が揃い、表の見出しに内部の列名が出ない | `test_review_page_title_matches_the_menu`、`test_funnel_table_has_no_english_heading` |
 | 削除は確認しないと押せない。確認すれば消える | `test_delete_is_disabled_until_confirmed`、`test_delete_works_once_confirmed` |
+| 選考ステップと所見の削除も、何が失われるかを見せた上の「削除する」だけで行える | `test_step_delete_is_behind_a_confirmation`、`test_review_delete_is_behind_a_confirmation` |
 | CSV の取り込みは、要約を出しただけでは書かず、押されたときに要約どおりに書く。読めないファイルは文面で伝える。要約のあとで登録内容が変わっていたら書かずに知らせる | `test_summary_is_shown_and_nothing_is_written_until_confirmed`、`test_confirming_writes_what_the_summary_showed`、`test_unreadable_file_shows_a_message_not_a_traceback`、`test_a_summary_that_went_stale_is_not_applied` |
 | セッションごとに接続を持ち、別接続から書き込みが見える | `test_each_session_opens_its_own_connection`、`test_write_through_the_app_is_visible_to_another_connection` |
 | 死んだ接続は次の再描画で張り直す | `test_a_dead_connection_is_reopened_on_the_next_run` |

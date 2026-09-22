@@ -349,11 +349,14 @@ elif page == "企業管理":
         for step in steps:
             c1, c2 = st.columns([4, 1])
             c1.write(as_text(step.name))
-            if c2.button("削除", key=f"delstep{step.id}") and run_write(
-                lambda sid=step.id: selection.delete_step(sid or -1),
-                success="ステップを削除しました。",
-            ):
-                st.rerun()
+            # 1クリックで消さない。回答の削除と同じく、何が失われるかを見せてから押させる
+            with c2.popover("削除"):
+                st.warning(f"「{as_text(step.name)}」を消します。締切・結果・メモも消え、元に戻せません。")
+                if st.button("削除する", key=f"delstep{step.id}", type="secondary") and run_write(
+                    lambda sid=step.id: selection.delete_step(sid or -1),
+                    success="ステップを削除しました。",
+                ):
+                    st.rerun()
 
     with st.expander("企業情報の編集"), st.form("edit_company"):
         e_name = st.text_input("企業名", value=selected.name)
@@ -397,7 +400,9 @@ elif page == "企業管理":
         confirmed = st.checkbox(
             f"「{as_text(selected.name)}」を削除することを理解しました", key=f"confirm_del{company_id}"
         )
-        if st.button("削除する", disabled=not confirmed, type="secondary") and run_write(
+        if st.button(
+            "削除する", key="delete_company", disabled=not confirmed, type="secondary"
+        ) and run_write(
             lambda: selection.delete_company(company_id),
             success=f"「{as_text(selected.name)}」を削除しました。",
         ):
@@ -610,11 +615,13 @@ elif page == "添削":
                     file_name=f"review_{review.id}.md",
                     key=f"dl_review_{review.id}",
                 )
-                if c1.button("削除", key=f"rm_review_{review.id}") and run_write(
-                    lambda rid=review.id: reviewer.delete(rid or -1),
-                    success="所見を削除しました。",
-                ):
-                    st.rerun()
+                with c1.popover("削除"):
+                    st.warning("この所見を消します。元に戻せません。")
+                    if st.button("削除する", key=f"rm_review_{review.id}", type="secondary") and run_write(
+                        lambda rid=review.id: reviewer.delete(rid or -1),
+                        success="所見を削除しました。",
+                    ):
+                        st.rerun()
 
 
 # --- 分析 ----------------------------------------------------------------

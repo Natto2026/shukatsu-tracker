@@ -26,6 +26,8 @@ Fixed に対応する。
 
 | 途中のステップを消したあとにステップを足すと、並び順が既存の行と重複する。PostgreSQL では2端末から同時に足しても重複する | 並び順を件数で決めていた。PostgreSQL は境界を開いても他の接続を待たせない | 並び順は最大値の次にする。企業の行を `FOR UPDATE`（SQLite では空）でロックしてから読む | `test_a_step_added_after_a_deletion_does_not_collide`、`test_add_step_locks_the_company_row_before_reading_the_order` |
 
+| 選考ステップと所見が、確認なしの1クリックで消える（企業と回答だけが確認付きだった） | 削除ボタンを直に置いていた | 回答の削除と同じく、何が失われるかを見せてから「削除する」を押させる | `test_step_delete_is_behind_a_confirmation`、`test_review_delete_is_behind_a_confirmation` |
+
 上の表のうち「別のセッション」「別のタブ」「他のプロセス」が絡むものは、1人で1つのタブから
 使っている限り起きない。複数のセッションやスレッドから使ったときにだけ現れるため、
 テストも並行に書く形で再現している。
