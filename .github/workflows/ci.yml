@@ -5,6 +5,15 @@ on:
     branches: [main, develop]
   pull_request:
 
+# 既定の GITHUB_TOKEN は読み取りだけにする。CI はコミットもリリースもしない
+permissions:
+  contents: read
+
+# 同じブランチへの連続 push で、古い実行を止めて最新だけを走らせる
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -13,7 +22,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install -e ".[dev]"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            constraints.txt
+      - run: pip install -e ".[dev]" -c constraints.txt
       - run: python -m ruff check .
       - run: python -m ruff format --check .
 
@@ -24,7 +37,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install -e ".[dev]"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            constraints.txt
+      - run: pip install -e ".[dev]" -c constraints.txt
       - run: python -m mypy
 
   test:
@@ -32,13 +49,17 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.13"]
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e ".[dev]"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            constraints.txt
+      - run: pip install -e ".[dev]" -c constraints.txt
       # 網羅率は記録として出すだけで、しきい値では落とさない
       - run: python -m pytest -v --cov
 
@@ -67,7 +88,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install -e ".[dev,postgres]"
-      - run: python -m pytest -v
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            constraints.txt
+      - run: pip install -e ".[dev,postgres]" -c constraints.txt
+      # PostgreSQL の方言の分岐は SQLite のジョブでは通らない。ここでも網羅率を出す
+      - run: python -m pytest -v --cov
         env:
           SHUKATSU_TEST_DSN: postgresql://postgres:postgres@127.0.0.1:5432/shukatsu_test
