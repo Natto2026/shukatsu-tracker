@@ -13,7 +13,14 @@ import threading
 import pytest
 
 from shukatsu_tracker import db
-from shukatsu_tracker.db import Database, DuplicateKeyError, migrations, transaction
+from shukatsu_tracker.db import (
+    BusyError,
+    Database,
+    DatabaseError,
+    DuplicateKeyError,
+    migrations,
+    transaction,
+)
 from shukatsu_tracker.db.dialects import SqliteDialect
 from shukatsu_tracker.models import Company
 from shukatsu_tracker.services import SelectionService
@@ -61,6 +68,7 @@ class TestSeparateConnections:
 
         開始時にロックを取らないと、境界の中で読んでから書くまでの間に別の接続が
         書き込めてしまい、読んだ値（並び順の算出など）が古くなる。
+        待ちきれなかった側には、ドライバの例外ではなく共通の BusyError が届くこと。
         """
         first = db.connect(tmp_path / "shared.db")
         second = db.connect(tmp_path / "shared.db")
@@ -68,7 +76,7 @@ class TestSeparateConnections:
         try:
             with transaction(first):
                 first.fetchall("SELECT id FROM companies")
-                with pytest.raises(sqlite3.OperationalError, match="locked"), transaction(second):
+                with pytest.raises(BusyError), transaction(second):
                     second.execute("INSERT INTO companies (name) VALUES (?)", ("割り込み社",))
             with transaction(second):
                 second.execute("INSERT INTO companies (name) VALUES (?)", ("後続社",))
@@ -225,7 +233,7 @@ class TestCommitFailure:
     def test_a_failed_commit_resets_the_depth_and_releases_the_lock(self, tmp_path, flaky):
         database, wrapper = flaky
         wrapper.fail_next = True
-        with pytest.raises(sqlite3.OperationalError), transaction(database):
+        with pytest.raises(DatabaseError, match="disk I/O error"), transaction(database):
             database.execute("INSERT INTO companies (name) VALUES (?)", ("消える社",))
         assert database.depth == 0
         assert company_names(database) == []
@@ -243,7 +251,7 @@ class TestCommitFailure:
     def test_the_next_boundary_still_rolls_back_after_a_failed_commit(self, flaky):
         database, wrapper = flaky
         wrapper.fail_next = True
-        with pytest.raises(sqlite3.OperationalError), transaction(database):
+        with pytest.raises(DatabaseError, match="disk I/O error"), transaction(database):
             database.execute("INSERT INTO companies (name) VALUES (?)", ("消える社",))
 
         with pytest.raises(RuntimeError), transaction(database):
@@ -260,7 +268,7 @@ class TestCommitFailure:
         database, wrapper = flaky
         wrapper.fail_next = True
         wrapper.already_rolled_back = True
-        with pytest.raises(sqlite3.OperationalError, match="disk I/O error"), transaction(database):
+        with pytest.raises(DatabaseError, match="disk I/O error"), transaction(database):
             database.execute("INSERT INTO companies (name) VALUES (?)", ("消える社",))
         assert database.depth == 0
 

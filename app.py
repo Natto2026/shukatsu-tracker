@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import re
+from contextlib import suppress
 from datetime import date
 from pathlib import Path
 
@@ -23,7 +24,7 @@ import pandas as pd
 import streamlit as st
 
 from shukatsu_tracker import ai_export, analytics, constants, db, research
-from shukatsu_tracker.db import DatabaseError, DuplicateKeyError
+from shukatsu_tracker.db import ConnectionLostError, DatabaseError, DuplicateKeyError
 from shukatsu_tracker.models import Company, EsAnswer
 from shukatsu_tracker.review import ReviewError
 from shukatsu_tracker.review.providers import available_providers
@@ -55,9 +56,16 @@ def get_db():
     全セッションで1つの接続を共有すると、あるセッションの失敗が別の
     セッションの確定済みの書き込みを巻き戻すため。
     """
-    if "db" not in st.session_state:
-        st.session_state.db = db.connect(DB_TARGET)
-    return st.session_state.db
+    database = st.session_state.get("db")
+    if database is not None and not database.ping():
+        # サーバーの再起動などで接続が死んでいる。持ち続けると、以後の操作が
+        # すべて失敗したままになるので、閉じて作り直す。
+        with suppress(Exception):
+            database.close()
+        database = None
+    if database is None:
+        database = st.session_state.db = db.connect(DB_TARGET)
+    return database
 
 
 def flash(message: str, kind: str = "success") -> None:
@@ -76,6 +84,10 @@ def run_write(action, success: str | None = None) -> bool:
         action()
     except DuplicateKeyError:
         st.error("同じ名前がすでに登録されています。別の名前にしてください。")
+    except ConnectionLostError as error:
+        # 次の再描画で接続を張り直せるように、死んだ接続は手放す
+        st.session_state.pop("db", None)
+        st.error(f"保存できませんでした: {error}")
     except DatabaseError as error:
         st.error(f"保存できませんでした: {error}")
     except ValueError as error:

@@ -4,7 +4,9 @@ from .connection import connect, transaction
 from .database import Database
 from .dialects import describe
 from .errors import (
+    BusyError,
     ConnectionFailedError,
+    ConnectionLostError,
     DatabaseError,
     DuplicateKeyError,
     ForeignKeyError,
@@ -18,8 +20,10 @@ from .repositories import (
 )
 
 __all__ = [
+    "BusyError",
     "CompanyRepository",
     "ConnectionFailedError",
+    "ConnectionLostError",
     "Database",
     "DatabaseError",
     "DuplicateKeyError",
