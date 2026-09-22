@@ -31,6 +31,7 @@ main / develop / 作業ブランチの3層で運用する。
 2. develop から作業ブランチを切る。依存は `pip install -e ".[dev]" -c constraints.txt` で入れる
    (CI と同じ版にそろえるため。版を上げるときは、全部通してから `constraints.txt` を書き換える)
 3. PR 前にローカルで `ruff check .`・`ruff format --check .`・`python -m mypy`・`python -m pytest` をすべて通す
+   (書きながら回すときは `python -m pytest -m "not ui"` で画面のテストを外してよい。PR 前は全部)
 4. 挙動を変える修正には回帰テストを添える
 5. CHANGELOG.md の Unreleased に追記してから、develop への PR を出す
 6. CI が緑になったらマージし、作業ブランチを削除する

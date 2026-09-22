@@ -25,6 +25,8 @@
 ### Changed
 - CI: `GITHUB_TOKEN` を読み取り専用にし、同じブランチへの連続 push で古い実行を止め、pip をキャッシュする。SQLite のテストに Python 3.12 を足し、PostgreSQL のジョブでも網羅率を出す（方言の分岐は SQLite のジョブでは通らないため）
 - `.gitignore` に `.env`・`.streamlit/secrets.toml`・`*.db-wal`・`*.db-shm`・`htmlcov/`・`dist/` などを追加。認証情報と SQLite の付随ファイルが `git add .` で混入しないようにした
+- README の「見つけた不具合と直し方」の表を docs/known_issues.md に移し、README には要約と参照だけを残した（表が12行に伸び、README の主題である使い方が埋もれるため）
+- 画面のテスト（AppTest）に `ui` マーカーを付けた。`-m "not ui"` で単体だけを数秒で回せる。CI は従来どおり全部を回す
 
 ## [0.8.0] - 2026-09-21
 

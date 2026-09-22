@@ -37,6 +37,9 @@ shukatsu_tracker = ["db/migrations/*.sql", "review/criteria/*.toml", "review/cri
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "ui: Streamlit の AppTest で画面を動かすテスト。1本あたり数秒かかる。単体だけ回すときは -m 'not ui'",
+]
 
 [tool.coverage.run]
 # 計測は `python -m pytest --cov` のときだけ走る。ふだんの pytest は計測しない。

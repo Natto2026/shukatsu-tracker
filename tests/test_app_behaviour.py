@@ -19,6 +19,9 @@ from shukatsu_tracker.services import EsService, SelectionService
 
 APP_PATH = str(Path(__file__).parent.parent / "app.py")
 
+# AppTest はアプリ全体を実行するので遅い。日常は `-m "not ui"` で外せるようにしておく
+pytestmark = pytest.mark.ui
+
 
 @pytest.fixture
 def app_db(tmp_path, monkeypatch):
