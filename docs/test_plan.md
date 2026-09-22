@@ -98,6 +98,7 @@
 |---|---|
 | 未対応の接続先・psycopg の未導入・届かない PostgreSQL・開けない SQLite ファイルは、どれも共通の例外になる | `test_unsupported_scheme_is_translated`、`test_missing_postgres_driver_is_translated`、`test_unreachable_postgres_is_translated_without_leaking_the_target`、`test_sqlite_file_that_cannot_be_opened_is_translated` |
 | 接続に失敗しても画面は例外ではなく文面を出し、接続文字列の中身を出さない | `test_app_shows_a_message_not_a_traceback` |
+| 接続の生死を見分けられる。切れた接続への操作は共通の型で上がる | `test_ping_tells_a_live_connection_from_a_closed_one`、`test_operating_on_a_closed_connection_is_reported_as_lost` |
 
 ### トランザクション（`tests/test_transactions.py`）
 
@@ -110,7 +111,7 @@
 | 同時に書いた行がすべて残る | `test_concurrent_writers_all_persist` |
 | サービス経由の書き込みは直列化される | `test_service_level_writes_are_serialised` |
 | 重複で失敗しても先に入れた行は残る | `test_a_duplicate_failure_leaves_earlier_rows_intact` |
-| SQLite の境界は開始時に書き込みロックを取り、別の接続の書き込みを待たせる | `test_sqlite_boundary_takes_the_write_lock_at_the_start` |
+| SQLite の境界は開始時に書き込みロックを取り、別の接続の書き込みを待たせる。待ちきれなかった側には共通の BusyError が届く | `test_sqlite_boundary_takes_the_write_lock_at_the_start` |
 | COMMIT が失敗しても深さが戻り、書き込みロックが解放される | `test_a_failed_commit_resets_the_depth_and_releases_the_lock` |
 | COMMIT の失敗のあとも、次の境界は正しく巻き戻り・確定する | `test_the_next_boundary_still_rolls_back_after_a_failed_commit` |
 | ドライバが巻き戻し済みの COMMIT 失敗でも、元の例外を隠さない | `test_a_commit_the_driver_already_rolled_back_does_not_mask_the_error` |
@@ -131,6 +132,7 @@
 | 削除は確認しないと押せない。確認すれば消える | `test_delete_is_disabled_until_confirmed`、`test_delete_works_once_confirmed` |
 | CSV の取り込みは、要約を出しただけでは書かず、押されたときに要約どおりに書く。読めないファイルは文面で伝える。要約のあとで登録内容が変わっていたら書かずに知らせる | `test_summary_is_shown_and_nothing_is_written_until_confirmed`、`test_confirming_writes_what_the_summary_showed`、`test_unreadable_file_shows_a_message_not_a_traceback`、`test_a_summary_that_went_stale_is_not_applied` |
 | セッションごとに接続を持ち、別接続から書き込みが見える | `test_each_session_opens_its_own_connection`、`test_write_through_the_app_is_visible_to_another_connection` |
+| 死んだ接続は次の再描画で張り直す | `test_a_dead_connection_is_reopened_on_the_next_run` |
 | 保存先の表示にパスワードや絶対パスが出ない | `TestTargetIsNotLeaked` |
 
 ### 企業研究リンク・書き出し（`tests/test_research_and_export.py`）

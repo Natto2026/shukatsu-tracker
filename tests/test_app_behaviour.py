@@ -396,6 +396,21 @@ class TestConnectionScope:
         assert not first.exception and not second.exception
         assert first.session_state["db"] is not second.session_state["db"]
 
+    def test_a_dead_connection_is_reopened_on_the_next_run(self, app_db):
+        """サーバーの再起動などで接続が死んでも、次の再描画で張り直すこと。
+
+        死んだ接続を持ち続けると、以後の操作がすべて生の例外で失敗する。
+        """
+        seed_company(app_db)
+        at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+        assert not at.exception, at.exception
+        at.session_state["db"].close()
+
+        at.run()
+        assert not at.exception, at.exception
+        assert at.session_state["db"].ping()
+        assert {m.label: m.value for m in at.metric}["エントリー企業"] == "1 社"
+
 
 def test_write_through_the_app_is_visible_to_another_connection(app_db):
     """アプリの書き込みが、別の接続からも読めること（未コミットで止まらない）。"""
