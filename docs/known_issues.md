@@ -24,6 +24,8 @@ Fixed に対応する。
 | 出力の上限で途中で切れた所見が、完成品として保存される | 応答の停止理由を「拒否」しか見ていなかった | `max_tokens` で止まった応答は保存せず、理由を伝える。実行にかかったトークン数も所見と一緒に残す | `test_a_truncated_response_is_rejected_not_saved`、`test_usage_is_stored_with_the_review` |
 | 画面以外の入口から選択肢にない値や読めない締切を保存でき、一覧や締切から黙って消える。選択肢にない値があると企業管理の画面全体が例外で落ちる | 選択肢と日付の検証が画面と CSV にしかなく、サービス層は素通しだった。画面は `list.index` で位置を引いていた | 業界・志望度・応募経路・適性検査・締切をサービス層で検証する。選択肢にない古い値は末尾に足して表示し、黙って書き換えない | `TestCompanyValidation`、`test_an_unreadable_deadline_is_rejected_not_nulled`、`TestValuesOutsideTheChoices` |
 
+| 途中のステップを消したあとにステップを足すと、並び順が既存の行と重複する。PostgreSQL では2端末から同時に足しても重複する | 並び順を件数で決めていた。PostgreSQL は境界を開いても他の接続を待たせない | 並び順は最大値の次にする。企業の行を `FOR UPDATE`（SQLite では空）でロックしてから読む | `test_a_step_added_after_a_deletion_does_not_collide`、`test_add_step_locks_the_company_row_before_reading_the_order` |
+
 上の表のうち「別のセッション」「別のタブ」「他のプロセス」が絡むものは、1人で1つのタブから
 使っている限り起きない。複数のセッションやスレッドから使ったときにだけ現れるため、
 テストも並行に書く形で再現している。

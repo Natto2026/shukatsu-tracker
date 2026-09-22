@@ -39,6 +39,7 @@
 | id 列は上書きできない | `test_id_column_cannot_be_overwritten` |
 | ステップ一覧には企業の属性が結合される | `test_views_are_joined_with_company_fields` |
 | ステップは表示順で並ぶ | `test_ordered_by_sort_order` |
+| 行ロックの差し込み記号は PostgreSQL で `FOR UPDATE`、SQLite で空になる。ロックは行の有無を返す | `TestRowLock` |
 | 企業を消すとステップも消える | `test_deleting_company_cascades_steps` |
 | 企業を消しても回答は残る | `test_answer_survives_company_deletion` |
 | 回答の更新で更新日時が進む | `test_update_refreshes_the_timestamp` |
@@ -54,7 +55,8 @@
 | 読めない書式の締切は空にせず拒否する。読める締切は ISO 形式で保存する | `test_an_unreadable_deadline_is_rejected_not_nulled`、`test_a_readable_deadline_is_stored_in_iso_form` |
 | 重複で失敗したとき、ステップだけが残らない | `test_duplicate_name_leaves_no_orphan_steps` |
 | 追加したステップは末尾に付く | `test_added_step_goes_to_the_end` |
-| 追加するステップの並び順は、書き込みと同じ境界の中で読む | `test_add_step_reads_the_order_inside_the_transaction` |
+| 追加するステップの並び順は、書き込みと同じ境界の中で読む。読む前に企業の行をロックする | `test_add_step_reads_the_order_inside_the_transaction`、`test_add_step_locks_the_company_row_before_reading_the_order` |
+| 途中のステップを消したあとの追加が既存の並び順と衝突しない。消えた企業への追加は文面で伝える | `test_a_step_added_after_a_deletion_does_not_collide`、`test_adding_a_step_to_a_missing_company_is_reported` |
 | 空のステップ名・未定義の結果は拒否 | `test_blank_step_name_is_rejected`、`test_undefined_result_is_rejected` |
 | 回答の本文は、表示していた本文と一致するときだけ書き換える。消えた回答は文面で伝える | `test_update_refuses_to_overwrite_a_text_that_changed_since_it_was_shown`、`test_update_writes_when_the_shown_text_is_still_current`、`test_update_of_a_deleted_answer_is_reported` |
 | 複数ステップの更新は全行を検証してから1つの境界で書く。途中で失敗したら何も残らない。書いた行数を返す | `test_updating_many_steps_validates_every_row_before_writing`、`test_a_failure_midway_leaves_no_step_updated`、`test_updating_many_steps_counts_only_rows_with_a_change` |
