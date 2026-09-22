@@ -299,6 +299,66 @@ class TestDestructiveActionsNeedConfirmation:
             database.close()
 
 
+def seed_answer(path, text: str = "初稿") -> int:
+    database = open_db(path)
+    try:
+        return EsService(database).add(EsAnswer(question="志望動機", category="志望動機", answer=text))
+    finally:
+        database.close()
+
+
+def read_answer(path, answer_id: int) -> str:
+    database = open_db(path)
+    try:
+        stored = EsService(database).answer(answer_id)
+        assert stored is not None
+        return stored.answer
+    finally:
+        database.close()
+
+
+def answer_text_area(at: AppTest):
+    """回答一覧の入力欄。「設問・回答を追加」の入力欄も同じラベルなので、末尾を取る。"""
+    areas = [t for t in at.text_area if t.label == "回答"]
+    assert len(areas) >= 2, "回答の入力欄が見つからない"
+    return areas[-1]
+
+
+class TestEsStaleTab:
+    """ES 本文でも、古いタブが新しい変更を潰さないこと（選考ステップと同じ性質）。
+
+    更新日は日付単位なので、同じ日のうちの更新は入力欄のキーで見分けられなかった。
+    """
+
+    def test_a_stale_tab_cannot_overwrite_a_newer_answer(self, app_db):
+        answer_id = seed_answer(app_db)
+        at = open_page(app_db, "ES管理")
+
+        database = open_db(app_db)
+        try:
+            EsService(database).update_text(answer_id, "第二稿")  # 同じ日のうちの更新
+        finally:
+            database.close()
+
+        answer_text_area(at).set_value("古いタブの編集")
+        at.button(key=f"save{answer_id}").click().run()
+
+        assert not at.exception, at.exception
+        assert read_answer(app_db, answer_id) == "第二稿"
+        assert any("他の場所で更新された" in w.value for w in at.warning)
+        assert not any("変更はありませんでした" in i.value for i in at.info)
+
+    def test_saving_from_a_fresh_tab_still_works(self, app_db):
+        answer_id = seed_answer(app_db)
+        at = open_page(app_db, "ES管理")
+        answer_text_area(at).set_value("推敲した本文")
+        at.button(key=f"save{answer_id}").click().run()
+
+        assert not at.exception, at.exception
+        assert read_answer(app_db, answer_id) == "推敲した本文"
+        assert not any("他の場所で更新された" in w.value for w in at.warning)
+
+
 class TestEsLibraryFilter:
     def test_keyword_narrows_the_list(self, app_db):
         """絞り込みはサービス層の検索を通ること（画面に同じ判定を持たない）。"""

@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from contextlib import suppress
@@ -50,6 +51,14 @@ _MARKDOWN_SPECIALS = re.compile(r"([\\`*_{}\[\]()#+\-.!|>~])")
 def as_text(value: str | None) -> str:
     """利用者が入れた文字列を、Markdown として解釈されない形にする。"""
     return "" if not value else _MARKDOWN_SPECIALS.sub(r"\\\1", value)
+
+
+def saved_token(text: str) -> str:
+    """保存済みの本文を入力欄のキーに含めるための短い識別子。
+
+    本文そのものをキーにすると長すぎるため、ダイジェストにする。
+    """
+    return hashlib.blake2s(text.encode("utf-8"), digest_size=8).hexdigest()
 
 
 def get_db():
@@ -431,17 +440,27 @@ elif page == "ES管理":
     shown = es.search(categories=filter_categories, keyword=keyword)
     st.caption(f"{len(shown)} / {len(all_answers)} 件")
 
+    # 前回この画面に出した本文を控えておく（選考ステップと同じ仕組み）。保存を押した
+    # 再実行では入力欄が最新の本文で作り直されるため、古い表示への入力は届かない。
+    # 届かなかったことを知らせるには、入力欄とは別に「何を見せていたか」が要る。
+    previously_shown_text: dict[int, str] = st.session_state.get("es_shown", {})
+    st.session_state["es_shown"] = {a.id or -1: a.answer for a in shown}
+
     for answer in shown:
+        answer_id = answer.id or -1
         # expander の見出しは Markdown として描画される
         title = (
             f"[{answer.category}] {as_text(answer.question[:40])}（{as_text(answer.company_name) or '汎用'}）"
         )
         with st.expander(title):
+            # 保存済みの本文をキーに含める。別のタブや端末で更新されたとき、古い入力欄の
+            # 値が残って上書きするのを防ぐため。更新日は日付単位なので、同じ日のうちの
+            # 更新を見分けられず、キーに使えない。
             new_text = st.text_area(
                 "回答",
                 value=answer.answer,
                 height=200,
-                key=f"es:{answer.id}:{answer.updated_at}",
+                key=f"es:{answer_id}:{saved_token(answer.answer)}",
             )
             check = es.length_check(new_text, answer.char_limit)
             if check.limit is None:
@@ -453,19 +472,27 @@ elif page == "ES管理":
             else:
                 st.caption(f"文字数: {check.length} / {check.limit}")
 
-            if st.button("保存", key=f"save{answer.id}"):
-                if new_text == answer.answer:
+            if st.button("保存", key=f"save{answer_id}"):
+                # 押した時点の表示と、いま読み直した本文を突き合わせる。ずれていれば
+                # 入力欄は作り直されており、new_text には最新の本文しか入っていない。
+                if previously_shown_text.get(answer_id, answer.answer) != answer.answer:
+                    st.warning(
+                        "表示後に他の場所で更新されたため、この入力は反映していません。最新の本文を表示しています。"
+                    )
+                elif new_text == answer.answer:
                     st.info("変更はありませんでした。")
                 elif run_write(
-                    lambda aid=answer.id, text=new_text: es.update_text(aid or -1, text),
+                    lambda aid=answer_id, text=new_text, seen=answer.answer: es.update_text(
+                        aid, text, expected=seen
+                    ),
                     success="回答を保存しました。",
                 ):
                     st.rerun()
 
             with st.popover("削除"):
                 st.warning("この回答と、ひもづく所見の履歴もすべて消えます。元に戻せません。")
-                if st.button("削除する", key=f"rm{answer.id}", type="secondary") and run_write(
-                    lambda aid=answer.id: es.delete(aid or -1),
+                if st.button("削除する", key=f"rm{answer_id}", type="secondary") and run_write(
+                    lambda aid=answer_id: es.delete(aid),
                     success="回答を削除しました。",
                 ):
                     st.rerun()
