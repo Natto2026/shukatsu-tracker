@@ -45,6 +45,9 @@ class ReviewResult:
     prompt: str
     text: str
     model: str | None = None
+    # 実行にかかったトークン数。応答に使用量がなければ None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
 
 
 class ReviewProvider(Protocol):
@@ -132,17 +135,28 @@ class AnthropicProvider:
             params["fallbacks"] = "default"
 
         response = self._call(client, params)
-        if getattr(response, "stop_reason", None) == "refusal":
+        stop_reason = getattr(response, "stop_reason", None)
+        if stop_reason == "refusal":
             raise ReviewError("評価の実行が安全上の理由で見送られました。回答本文の内容を確認してください。")
+        if stop_reason == "max_tokens":
+            # 途中で切れた所見を完成品として保存すると、「改善の提案」以降が欠けた
+            # まま利用者が完成品と誤認する。保存せずに理由を伝える。
+            raise ReviewError(
+                f"所見が途中で切れました（出力の上限 {self.max_tokens} トークンに達しました）。"
+                "途中までの所見は保存していません。回答本文や補足を短くして試してください。"
+            )
 
         text = extract_text(response)
         if not text:
             raise ReviewError("応答に本文が含まれていませんでした。")
+        input_tokens, output_tokens = extract_usage(response)
         return ReviewResult(
             provider=self.name,
             prompt=prompt,
             text=text,
             model=getattr(response, "model", self.model),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
 
     def _call(self, client: Any, params: dict[str, Any]) -> Any:
@@ -158,7 +172,10 @@ class AnthropicProvider:
         except anthropic.RateLimitError as error:
             raise ReviewError("送信の上限に達しました。時間をおいて試してください。") from error
         except anthropic.APIStatusError as error:
-            raise ReviewError(f"API がエラーを返しました（{error.status_code}）。") from error
+            # 状態コードだけでは原因が分からない（モデル名の打ち間違いなど）ので、
+            # API の説明文の先頭行を添える。キーは含まれない
+            detail = _first_line(getattr(error, "message", None) or str(error))
+            raise ReviewError(f"API がエラーを返しました（{error.status_code}）: {detail}") from error
         except anthropic.APITimeoutError as error:
             raise ReviewError(
                 f"{self.timeout:.0f} 秒以内に応答がありませんでした。時間をおいて試してください。"
@@ -166,6 +183,10 @@ class AnthropicProvider:
         except anthropic.APIConnectionError as error:
             raise ReviewError("API に接続できませんでした。通信環境を確認してください。") from error
         except TypeError as error:
+            # 古い SDK が fallbacks などの引数を知らない場合だけ案内にする。
+            # それ以外の TypeError は SDK の内部の不具合なので、そのまま上げる
+            if "unexpected keyword argument" not in str(error):
+                raise
             raise ReviewError(
                 f'SDK がこの呼び出し方に対応していません: pip install -U "anthropic>=1.0"（{error}）'
             ) from error
@@ -177,6 +198,23 @@ def extract_text(response: Any) -> str:
         block.text for block in getattr(response, "content", []) if getattr(block, "type", None) == "text"
     ]
     return "\n".join(part for part in parts if part).strip()
+
+
+def extract_usage(response: Any) -> tuple[int | None, int | None]:
+    """応答から入力・出力のトークン数を取り出す。なければ None。"""
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return None, None
+    return _as_count(getattr(usage, "input_tokens", None)), _as_count(getattr(usage, "output_tokens", None))
+
+
+def _as_count(value: Any) -> int | None:
+    return int(value) if isinstance(value, int) and value >= 0 else None
+
+
+def _first_line(text: str, limit: int = 200) -> str:
+    line = text.strip().splitlines()[0] if text.strip() else ""
+    return line if len(line) <= limit else line[: limit - 1] + "…"
 
 
 def available_providers() -> list[ReviewProvider]:

@@ -587,7 +587,9 @@ elif page == "添削":
         for review in history:
             label = f"{review.created_at}  {review.provider}"
             if review.model:
-                label += f"（{review.model}）"
+                label += f"（{as_text(review.model)}）"
+            if review.input_tokens is not None or review.output_tokens is not None:
+                label += f"  入力 {review.input_tokens or 0:,} / 出力 {review.output_tokens or 0:,} トークン"
             if not review.applies_to(target.answer):
                 label += "  ※この所見のあとに本文が変わっています"
             with st.expander(label):

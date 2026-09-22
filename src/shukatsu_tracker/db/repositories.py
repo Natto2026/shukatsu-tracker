@@ -238,6 +238,8 @@ class ReviewRepository(_Table):
             "prompt",
             "result",
             "answer_snapshot",
+            "input_tokens",
+            "output_tokens",
         }
     )
 
@@ -252,6 +254,8 @@ class ReviewRepository(_Table):
             prompt=row["prompt"],
             result=row["result"],
             answer_snapshot=row["answer_snapshot"],
+            input_tokens=row["input_tokens"],
+            output_tokens=row["output_tokens"],
             created_at=row["created_at"],
         )
 
@@ -265,6 +269,8 @@ class ReviewRepository(_Table):
                 "prompt": review.prompt,
                 "result": review.result,
                 "answer_snapshot": review.answer_snapshot,
+                "input_tokens": review.input_tokens,
+                "output_tokens": review.output_tokens,
             }
         )
 
