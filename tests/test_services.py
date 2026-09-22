@@ -42,6 +42,59 @@ class TestAddCompany:
         assert len(selection.all_step_views()) == len(constants.DEFAULT_STEPS)
 
 
+class TestCompanyValidation:
+    """選択肢と書式の検証がサービス層にあること（画面や CSV だけに置かない）。"""
+
+    @pytest.mark.parametrize(
+        ("field", "value", "label"),
+        [
+            ("industry", "宇宙", "業界"),
+            ("priority", "Z", "志望度"),
+            ("route", "縁故", "応募経路"),
+            ("test_type", "口頭試問", "適性検査"),
+        ],
+    )
+    def test_a_value_outside_the_choices_is_rejected_on_add(self, selection, field, value, label):
+        with pytest.raises(ValueError, match=f"{label}「{value}」は選択肢にありません"):
+            selection.add_company(Company(name="テスト株式会社", **{field: value}))
+        assert selection.companies() == []
+
+    def test_a_value_outside_the_choices_is_rejected_on_update(self, selection):
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        with pytest.raises(ValueError, match="志望度「Z」は選択肢にありません"):
+            selection.update_company(company_id, priority="Z")
+        company = selection.company(company_id)
+        assert company is not None
+        assert company.priority == "B"
+
+    def test_update_trims_the_name_and_rejects_a_blank_one(self, selection):
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        selection.update_company(company_id, name="  新社名  ")
+        company = selection.company(company_id)
+        assert company is not None
+        assert company.name == "新社名"
+        with pytest.raises(ValueError, match="企業名は必須"):
+            selection.update_company(company_id, name="   ")
+
+    def test_url_and_email_are_trimmed(self, selection):
+        """先頭の空白が付いた URL は「リンクとして開ける」判定に落ちるので、除いて保存する。"""
+        company_id = selection.add_company(
+            Company(name="テスト株式会社", mypage_url=" https://example.com/ ", login_email=" a@example.com ")
+        )
+        company = selection.company(company_id)
+        assert company is not None
+        assert (company.mypage_url, company.login_email) == ("https://example.com/", "a@example.com")
+        selection.update_company(company_id, mypage_url="  https://example.com/mypage ")
+        company = selection.company(company_id)
+        assert company is not None
+        assert company.mypage_url == "https://example.com/mypage"
+
+    def test_updating_no_fields_writes_nothing(self, selection):
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        selection.update_company(company_id)
+        assert selection.company(company_id) is not None
+
+
 class TestSteps:
     def test_added_step_goes_to_the_end(self, selection):
         company_id = selection.add_company(Company(name="テスト株式会社"))
@@ -58,6 +111,24 @@ class TestSteps:
         step_id = selection.steps_of(company_id)[0].id or -1
         with pytest.raises(ValueError, match="未定義の選考結果"):
             selection.update_step(step_id, result="なんとなく通過")
+
+    @pytest.mark.parametrize("value", ["来週", "2026/10/01", "2026-13-01", "10月1日"])
+    def test_an_unreadable_deadline_is_rejected_not_nulled(self, selection, value):
+        """読めない締切を黙って空にしない。空にすると締切一覧から消えて気づけない。"""
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        step_id = selection.steps_of(company_id)[0].id or -1
+        with pytest.raises(ValueError, match="YYYY-MM-DD"):
+            selection.add_step(company_id, "リクルーター面談", deadline=value)
+        with pytest.raises(ValueError, match="YYYY-MM-DD"):
+            selection.update_step(step_id, deadline=value)
+        assert len(selection.steps_of(company_id)) == len(constants.DEFAULT_STEPS)
+        assert selection.steps_of(company_id)[0].deadline is None
+
+    def test_a_readable_deadline_is_stored_in_iso_form(self, selection):
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        step_id = selection.add_step(company_id, "リクルーター面談", deadline="2026-10-01")
+        selection.update_step(step_id, deadline="2026-11-05")
+        assert selection.steps_of(company_id)[-1].deadline == "2026-11-05"
 
     def test_deadline_can_be_cleared_without_touching_the_result(self, selection):
         company_id = selection.add_company(Company(name="テスト株式会社"))

@@ -7,9 +7,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import date
+from typing import Any
 
 from .. import analytics, constants
 from ..db import CompanyRepository, Database, StepRepository, transaction
@@ -23,6 +24,49 @@ class _Unset:
 
 
 UNSET = _Unset()
+
+# 企業の列のうち、選択肢が決まっているもの。画面の選択肢と CSV の取り込みが
+# 同じ定数を見ているが、サービス層でも検証する。別の入口（スクリプトなど）から
+# 選択肢にない値が入ると、一覧の並びや通過率の集計から黙って外れるため。
+_COMPANY_CHOICES: dict[str, list[str]] = {
+    "industry": constants.INDUSTRIES,
+    "priority": constants.PRIORITIES,
+    "route": constants.ROUTES,
+    "test_type": constants.TEST_TYPES,
+}
+_COMPANY_LABELS = {"industry": "業界", "priority": "志望度", "route": "応募経路", "test_type": "適性検査"}
+# 前後の空白を除く列。URL は先頭の空白で「リンクとして開ける」判定に落ちる
+_TRIMMED = ("name", "mypage_url", "login_email")
+
+
+def _validated_company_fields(fields: Mapping[str, object]) -> dict[str, Any]:
+    """企業の列の値を検証し、整えて返す。選択肢にない値・空の企業名は ValueError。"""
+    cleaned: dict[str, Any] = {}
+    for key, value in fields.items():
+        if key in _TRIMMED and isinstance(value, str):
+            value = value.strip()
+        if key == "name" and not value:
+            raise ValueError("企業名は必須です")
+        choices = _COMPANY_CHOICES.get(key)
+        if choices is not None and value not in choices:
+            raise ValueError(
+                f"{_COMPANY_LABELS[key]}「{value}」は選択肢にありません（{' / '.join(choices)}）"
+            )
+        cleaned[key] = value
+    return cleaned
+
+
+def _validated_deadline(deadline: str | None) -> str | None:
+    """締切は空か YYYY-MM-DD。読めない書式は、空にせず ValueError にする。
+
+    黙って空にすると、締切一覧からその行が消えて気づけない（CSV の取り込みと同じ方針）。
+    """
+    if not deadline:
+        return None
+    parsed = analytics.parse_date(deadline)
+    if parsed is None:
+        raise ValueError(f"締切「{deadline}」を YYYY-MM-DD の日付として読めません")
+    return parsed.isoformat()
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,7 +85,7 @@ class StepChange:
         """書き込む列と値。選択肢にない結果は ValueError。"""
         fields: dict[str, object] = {}
         if not isinstance(self.deadline, _Unset):
-            fields["deadline"] = self.deadline
+            fields["deadline"] = _validated_deadline(self.deadline)
         if not isinstance(self.result, _Unset):
             if self.result not in constants.STEP_RESULTS:
                 raise ValueError(f"未定義の選考結果です: {self.result}")
@@ -99,22 +143,20 @@ class SelectionService:
         企業とステップは1つのトランザクションで書く。片方だけ入った状態を
         残さないため（ステップのない企業は一覧で状況を出せなくなる）。
         """
-        name = company.name.strip()
-        if not name:
-            raise ValueError("企業名は必須です")
+        cleaned = _validated_company_fields(
+            {
+                "name": company.name,
+                "industry": company.industry,
+                "priority": company.priority,
+                "route": company.route,
+                "test_type": company.test_type,
+                "mypage_url": company.mypage_url,
+                "login_email": company.login_email,
+                "memo": company.memo,
+            }
+        )
         with transaction(self._db):
-            company_id = self._companies.add(
-                Company(
-                    name=name,
-                    industry=company.industry,
-                    priority=company.priority,
-                    route=company.route,
-                    test_type=company.test_type,
-                    mypage_url=company.mypage_url,
-                    login_email=company.login_email,
-                    memo=company.memo,
-                )
-            )
+            company_id = self._companies.add(replace(company, id=None, **cleaned))
             if with_default_steps:
                 self._steps.add_many(
                     [
@@ -125,8 +167,12 @@ class SelectionService:
         return company_id
 
     def update_company(self, company_id: int, **fields: object) -> None:
+        """指定された列だけを更新する。値の検証は追加と同じ。"""
+        cleaned = _validated_company_fields(fields)
+        if not cleaned:
+            return
         with transaction(self._db):
-            self._companies.update(company_id, **fields)
+            self._companies.update(company_id, **cleaned)
 
     def delete_company(self, company_id: int) -> None:
         """企業を削除する。ステップは連動削除、ES 回答は残る（スキーマの制約）。"""
@@ -152,6 +198,7 @@ class SelectionService:
         label = name.strip()
         if not label:
             raise ValueError("ステップ名は必須です")
+        checked_deadline = _validated_deadline(deadline)
         # 並び順を決める読み取りも境界の中で行う。外で読むと、読んでから書くまでの
         # 間に別の追加が割り込み、同じ並び順が2つできる。
         with transaction(self._db):
@@ -160,7 +207,7 @@ class SelectionService:
                 Step(
                     company_id=company_id,
                     name=label,
-                    deadline=deadline,
+                    deadline=checked_deadline,
                     sort_order=len(existing),
                 )
             )
