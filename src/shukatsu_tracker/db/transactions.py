@@ -11,7 +11,7 @@ BEGIN と COMMIT を発行するのはこのモジュールだけ。
 from __future__ import annotations
 
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 
 from .database import Database
 
@@ -39,8 +39,24 @@ def transaction(db: Database) -> Iterator[Database]:
                 db.leave()
             raise
         if outermost:
-            db.commit()
+            _commit_or_roll_back(db)
         else:
             db.leave()
     finally:
         db.lock.release()
+
+
+def _commit_or_roll_back(db: Database) -> None:
+    """COMMIT を発行し、失敗したら ROLLBACK を試みてから元の例外を上げる。
+
+    COMMIT の失敗（ディスクの I/O エラー、サーバーとの切断など）をそのまま
+    上げると、開いたままのトランザクションが書き込みロックを握り続け、
+    別のセッションの起動が「database is locked」で止まる。ROLLBACK 自体が
+    失敗する場合（ドライバがすでに巻き戻している）は、元の例外を優先する。
+    """
+    try:
+        db.commit()
+    except BaseException:
+        with suppress(Exception):
+            db.rollback()
+        raise
