@@ -2,7 +2,7 @@
 
 動いているように見えるアプリを疑って総点検したときの記録。v0.6.0 の前には、画面をただ開く、
 2つのタブで同じ企業を編集する、複数のスレッドから同時に書く、といった操作で見つけたもの。
-v0.9.0 の前には、永続化・画面・サービス・CI の4つの観点で監査して見つけたものを足した。
+0.8.0 のあとには、永続化・画面・サービス・CI の4つの観点で監査して見つけたものを足した。
 
 いずれも修正と一緒に回帰テストを足し、わざと元に戻してテストが失敗することまで確かめている。
 表の「回帰テスト」は `tests/` の関数名と一致していて、観点ごとの一覧は
@@ -23,9 +23,7 @@ Fixed に対応する。
 | ES 本文を別のタブで同じ日に更新すると、古いタブの「保存」で潰される | 入力欄のキーに含めていた更新日が日付単位で、同じ日のうちの更新を見分けられなかった | キーに保存済みの本文のダイジェストを含め、表示していた本文と突き合わせてから書く。サービス層でも、表示していた本文と一致するときだけ書き換える | `test_a_stale_tab_cannot_overwrite_a_newer_answer`、`test_update_refuses_to_overwrite_a_text_that_changed_since_it_was_shown` |
 | 出力の上限で途中で切れた所見が、完成品として保存される | 応答の停止理由を「拒否」しか見ていなかった | `max_tokens` で止まった応答は保存せず、理由を伝える。実行にかかったトークン数も所見と一緒に残す | `test_a_truncated_response_is_rejected_not_saved`、`test_usage_is_stored_with_the_review` |
 | 画面以外の入口から選択肢にない値や読めない締切を保存でき、一覧や締切から黙って消える。選択肢にない値があると企業管理の画面全体が例外で落ちる | 選択肢と日付の検証が画面と CSV にしかなく、サービス層は素通しだった。画面は `list.index` で位置を引いていた | 業界・志望度・応募経路・適性検査・締切をサービス層で検証する。選択肢にない古い値は末尾に足して表示し、黙って書き換えない | `TestCompanyValidation`、`test_an_unreadable_deadline_is_rejected_not_nulled`、`TestValuesOutsideTheChoices` |
-
 | 途中のステップを消したあとにステップを足すと、並び順が既存の行と重複する。PostgreSQL では2端末から同時に足しても重複する | 並び順を件数で決めていた。PostgreSQL は境界を開いても他の接続を待たせない | 並び順は最大値の次にする。企業の行を `FOR UPDATE`（SQLite では空）でロックしてから読む | `test_a_step_added_after_a_deletion_does_not_collide`、`test_add_step_locks_the_company_row_before_reading_the_order` |
-
 | 選考ステップと所見が、確認なしの1クリックで消える（企業と回答だけが確認付きだった） | 削除ボタンを直に置いていた | 回答の削除と同じく、何が失われるかを見せてから「削除する」を押させる | `test_step_delete_is_behind_a_confirmation`、`test_review_delete_is_behind_a_confirmation` |
 
 上の表のうち「別のセッション」「別のタブ」「他のプロセス」が絡むものは、1人で1つのタブから
