@@ -69,6 +69,7 @@ def test_sqlite_file_that_cannot_be_opened_is_translated(tmp_path):
         db.connect(tmp_path)
 
 
+@pytest.mark.ui
 @pytest.mark.parametrize(
     "target",
     [
