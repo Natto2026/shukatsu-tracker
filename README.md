@@ -230,6 +230,7 @@ v0.6.0 の前に、動いているように見えるアプリを疑って総点�
 | ボタン1つで企業と選考ステップがまとめて消える | 確認のない削除ボタン | 確認のチェックを挟み、何が失われるかを明示する | `test_delete_is_disabled_until_confirmed` |
 | 保存先の表示に、利用者名やパスワードが出る | 接続文字列とファイルパスをそのまま表示していた | 種別と最小限の識別子だけを返す | `test_connection_string_never_shows_the_password` |
 | COMMIT が一度失敗すると、以後の書き込みが確定も巻き戻しもされず、別のセッションの起動が「database is locked」で止まる | COMMIT の失敗時に深さを戻しておらず、次の境界が入れ子と誤認されて BEGIN も ROLLBACK も発行されなかった | COMMIT・ROLLBACK は失敗しても深さを戻す。COMMIT が失敗したら ROLLBACK を試みてから元の例外を上げる | `test_a_failed_commit_resets_the_depth_and_releases_the_lock`、`test_the_next_boundary_still_rolls_back_after_a_failed_commit` |
+| ロック待ちの超過や接続の切断で、画面に生のトレースバックが出る。PostgreSQL を再起動すると、開いていたタブは以後の操作がすべて失敗したままになる | 翻訳していたのは一意制約と外部キーの違反だけで、BEGIN / COMMIT はそもそも翻訳を通っていなかった。死んだ接続をセッションが持ち続けていた | ドライバの例外をすべて共通の型に翻訳し、BEGIN / COMMIT / ROLLBACK も同じ経路を通す。再描画のたびに接続の生死を確かめ、死んでいれば張り直す | `test_operating_on_a_closed_connection_is_reported_as_lost`、`test_a_dead_connection_is_reopened_on_the_next_run` |
 
 このうち最初の2つは、1人で1つのタブから使っている限り起きません。複数のセッションや
 スレッドから使ったときにだけ現れるため、テストも並行に書く形で再現しています。

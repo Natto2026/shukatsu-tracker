@@ -20,6 +20,17 @@ class ForeignKeyError(DatabaseError):
     """存在しない行を参照した、または参照されている行を消そうとした。"""
 
 
+class BusyError(DatabaseError):
+    """別のセッションが書き込み中で、待ち時間内に書けなかった（ロック待ちの超過・競合）。"""
+
+
+class ConnectionLostError(DatabaseError):
+    """開いていた接続が使えなくなった（サーバーの再起動・切断・閉じた接続への操作）。
+
+    接続を作り直さないと以後の操作がすべて失敗する。画面はこの型を見て張り直す。
+    """
+
+
 class ConnectionFailedError(DatabaseError):
     """接続できなかった（未対応の接続先・依存の不足・ファイルやサーバーに届かない）。
 

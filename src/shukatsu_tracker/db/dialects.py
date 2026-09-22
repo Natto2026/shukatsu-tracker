@@ -14,7 +14,26 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from .errors import ConnectionFailedError, DuplicateKeyError, ForeignKeyError
+from .errors import (
+    BusyError,
+    ConnectionFailedError,
+    ConnectionLostError,
+    DatabaseError,
+    DuplicateKeyError,
+    ForeignKeyError,
+)
+
+_BUSY_MESSAGE = (
+    "別のセッションが書き込み中のため、待ち時間内に保存できませんでした。少し待ってからやり直してください"
+)
+_LOST_MESSAGE = "データベースとの接続が切れました。画面を再読み込みすると接続し直します"
+
+
+def _generic(error: Exception) -> DatabaseError:
+    """それ以外のドライバの例外。先頭行だけを文面に残す。"""
+    first_line = str(error).splitlines()[0] if str(error) else type(error).__name__
+    return DatabaseError(f"データベースの操作に失敗しました: {first_line}")
+
 
 # マイグレーションの SQL 中で方言差を吸収するための差し込み記号
 PK = "{{PK}}"
@@ -90,14 +109,20 @@ class SqliteDialect(Dialect):
         }
 
     def translate_error(self, error: Exception) -> Exception | None:
-        if not isinstance(error, sqlite3.IntegrityError):
+        if not isinstance(error, sqlite3.Error):
             return None
         message = str(error)
-        if "UNIQUE" in message.upper():
-            return DuplicateKeyError(message)
-        if "FOREIGN KEY" in message.upper():
-            return ForeignKeyError(message)
-        return None
+        upper = message.upper()
+        if isinstance(error, sqlite3.IntegrityError):
+            if "UNIQUE" in upper:
+                return DuplicateKeyError(message)
+            if "FOREIGN KEY" in upper:
+                return ForeignKeyError(message)
+        elif isinstance(error, sqlite3.OperationalError) and ("LOCKED" in upper or "BUSY" in upper):
+            return BusyError(_BUSY_MESSAGE)
+        elif isinstance(error, sqlite3.ProgrammingError) and "CLOSED" in upper:
+            return ConnectionLostError(_LOST_MESSAGE)
+        return _generic(error)
 
 
 class PostgresDialect(Dialect):
@@ -139,11 +164,25 @@ class PostgresDialect(Dialect):
             import psycopg
         except ImportError:  # pragma: no cover - 依存未導入なら翻訳対象がない
             return None
+        if not isinstance(error, psycopg.Error):
+            return None
         if isinstance(error, psycopg.errors.UniqueViolation):
             return DuplicateKeyError(str(error))
         if isinstance(error, psycopg.errors.ForeignKeyViolation):
             return ForeignKeyError(str(error))
-        return None
+        # ロック待ちの超過・競合は OperationalError の下位型なので、先に見る
+        contention = (
+            psycopg.errors.LockNotAvailable,
+            psycopg.errors.DeadlockDetected,
+            psycopg.errors.SerializationFailure,
+        )
+        if isinstance(error, contention):
+            return BusyError(_BUSY_MESSAGE)
+        # 開いていた接続への操作で起きる OperationalError は切断（接続時の失敗は
+        # connect() が先に ConnectionFailedError にしている）
+        if isinstance(error, (psycopg.OperationalError, psycopg.InterfaceError)):
+            return ConnectionLostError(_LOST_MESSAGE)
+        return _generic(error)
 
 
 def _swap_placeholders(sql: str, placeholder: str) -> str:
