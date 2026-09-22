@@ -20,6 +20,11 @@
 
 ### Added
 - 所見の実行にかかったトークン数を記録し、履歴に表示する（`reviews.input_tokens` / `output_tokens`、マイグレーション 004）。通信しない実行先では空
+- `constraints.txt`。依存を検証済みの版に固定し、CI と手元で同じ版が入るようにした。上流の更新でリポジトリ側の変更なしに CI が赤くなることを防ぐ
+
+### Changed
+- CI: `GITHUB_TOKEN` を読み取り専用にし、同じブランチへの連続 push で古い実行を止め、pip をキャッシュする。SQLite のテストに Python 3.12 を足し、PostgreSQL のジョブでも網羅率を出す（方言の分岐は SQLite のジョブでは通らないため）
+- `.gitignore` に `.env`・`.streamlit/secrets.toml`・`*.db-wal`・`*.db-shm`・`htmlcov/`・`dist/` などを追加。認証情報と SQLite の付随ファイルが `git add .` で混入しないようにした
 
 ## [0.8.0] - 2026-09-21
 
