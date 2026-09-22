@@ -29,11 +29,13 @@ from shukatsu_tracker.models import Company, EsAnswer
 from shukatsu_tracker.review import ReviewError
 from shukatsu_tracker.review.providers import available_providers
 from shukatsu_tracker.services import (
+    UNSET,
     CsvFormatError,
     CsvImportService,
     EsService,
     ReviewService,
     SelectionService,
+    StepChange,
     csv_import,
 )
 
@@ -280,30 +282,34 @@ elif page == "企業管理":
             outdated = sum(
                 1 for step_id, shown in previously_shown.items() if now_shown.get(step_id) != shown
             )
-            changed = 0
+            changes: list[StepChange] = []
             for step_id, new_deadline, new_result, old_deadline, old_result in edited:
-                fields: dict[str, object] = {}
                 rendered = analytics.parse_date(old_deadline)
                 # 表示していた値と違うものだけを書く。読めない締切に
                 # 触っていない場合は、空欄に見えていても書き換えない。
-                if new_deadline != rendered:
-                    fields["deadline"] = new_deadline.isoformat() if new_deadline else None
-                if new_result != old_result:
-                    fields["result"] = new_result
-                if fields:
-                    selection.update_step(step_id, **fields)  # type: ignore[arg-type]
-                    changed += 1
-            if outdated:
-                flash(
-                    f"{outdated} 件は表示後に他の場所で更新されたため、その行への入力は反映していません。"
-                    "最新の値を表示しています。",
-                    "warning",
+                deadline_change = (
+                    (new_deadline.isoformat() if new_deadline else None)
+                    if new_deadline != rendered
+                    else UNSET
                 )
-            if changed:
-                flash(f"{changed} 件を保存しました。", "info")
-            elif not outdated:
-                flash("変更はありませんでした。", "info")
-            st.rerun()
+                result_change = new_result if new_result != old_result else UNSET
+                if deadline_change is not UNSET or result_change is not UNSET:
+                    changes.append(StepChange(step_id, deadline=deadline_change, result=result_change))
+            # 何行あっても1つの境界で書く。途中で失敗したら何も残らず、失敗の文面は
+            # run_write が出す。再描画すると消えるので、失敗したときは止まる。
+            saved = not changes or run_write(lambda: selection.update_steps(changes))
+            if saved:
+                if outdated:
+                    flash(
+                        f"{outdated} 件は表示後に他の場所で更新されたため、その行への入力は反映していません。"
+                        "最新の値を表示しています。",
+                        "warning",
+                    )
+                if changes:
+                    flash(f"{len(changes)} 件を保存しました。", "info")
+                elif not outdated:
+                    flash("変更はありませんでした。", "info")
+                st.rerun()
 
     with st.form("add_step", clear_on_submit=True):
         c1, c2 = st.columns([3, 1])

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
@@ -22,6 +23,30 @@ class _Unset:
 
 
 UNSET = _Unset()
+
+
+@dataclass(frozen=True, slots=True)
+class StepChange:
+    """選考ステップ1件に対する変更。未指定の項目は触らない。
+
+    締切は「未指定」と「空にする（None）」を区別する必要があるため、
+    None ではなく専用の番兵で未指定を表す。
+    """
+
+    step_id: int
+    deadline: str | None | _Unset = UNSET
+    result: str | _Unset = UNSET
+
+    def fields(self) -> dict[str, object]:
+        """書き込む列と値。選択肢にない結果は ValueError。"""
+        fields: dict[str, object] = {}
+        if not isinstance(self.deadline, _Unset):
+            fields["deadline"] = self.deadline
+        if not isinstance(self.result, _Unset):
+            if self.result not in constants.STEP_RESULTS:
+                raise ValueError(f"未定義の選考結果です: {self.result}")
+            fields["result"] = self.result
+        return fields
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,22 +172,23 @@ class SelectionService:
         deadline: str | None | _Unset = UNSET,
         result: str | _Unset = UNSET,
     ) -> None:
-        """指定された項目だけを更新する。
+        """指定された項目だけを更新する。1件版。複数は update_steps。"""
+        self.update_steps([StepChange(step_id, deadline=deadline, result=result)])
 
-        締切は「未指定」と「空にする（None）」を区別する必要があるため、
-        None ではなく専用の番兵で未指定を表す。
+    def update_steps(self, changes: Sequence[StepChange]) -> int:
+        """複数のステップをまとめて更新し、書いた行数を返す。
+
+        全行を先に検証してから、1つの境界で書く。3行目で失敗して1〜2行目だけが
+        残ると、利用者は何が保存されたのか分からない。まとめて成功するか、
+        まとめて失敗するかのどちらかにする。
         """
-        fields: dict[str, object] = {}
-        if not isinstance(deadline, _Unset):
-            fields["deadline"] = deadline
-        if not isinstance(result, _Unset):
-            if result not in constants.STEP_RESULTS:
-                raise ValueError(f"未定義の選考結果です: {result}")
-            fields["result"] = result
-        if not fields:
-            return
+        planned = [(change.step_id, fields) for change in changes if (fields := change.fields())]
+        if not planned:
+            return 0
         with transaction(self._db):
-            self._steps.update(step_id, **fields)
+            for step_id, fields in planned:
+                self._steps.update(step_id, **fields)
+        return len(planned)
 
     def delete_step(self, step_id: int) -> None:
         with transaction(self._db):

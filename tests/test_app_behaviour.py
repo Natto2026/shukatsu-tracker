@@ -13,7 +13,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from shukatsu_tracker import db
-from shukatsu_tracker.db import transaction
+from shukatsu_tracker.db import DatabaseError, StepRepository, transaction
 from shukatsu_tracker.models import Company, EsAnswer
 from shukatsu_tracker.services import EsService, SelectionService
 
@@ -184,6 +184,41 @@ class TestErrorsAreFriendly:
 
         assert not at.exception, at.exception
         assert any("すでに登録されています" in e.value for e in at.error)
+
+    def test_a_failed_step_save_shows_a_message_and_writes_nothing(self, app_db, monkeypatch):
+        """保存の途中で失敗したら、生の例外ではなく文面で伝え、どの行も書かれないこと。
+
+        行ごとに別の境界で書いていると、2行目の失敗で1行目だけが残ったうえに
+        トレースバックが出る。
+        """
+        company_id, first_id = seed_company(app_db, deadline="2026-10-01")
+        database = open_db(app_db)
+        try:
+            second_id = SelectionService(database).add_step(company_id, "1次面接")
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+
+        original = StepRepository.update
+        calls = 0
+
+        def flaky(repository, step_id, **fields):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise DatabaseError("2行目で失敗")
+            return original(repository, step_id, **fields)
+
+        monkeypatch.setattr(StepRepository, "update", flaky)
+        results = [s for s in at.selectbox if s.label == "結果"]
+        results[0].set_value("通過")
+        results[1].set_value("落選")
+        [b for b in at.button if b.label == "選考ステップを保存"][0].click().run()
+
+        assert not at.exception, at.exception
+        assert any("保存できませんでした" in e.value for e in at.error)
+        assert read_step(app_db, first_id)[1] == "選考中"
+        assert read_step(app_db, second_id)[1] == "選考中"
 
     def test_blank_company_name_is_reported(self, app_db):
         seed_company(app_db)
