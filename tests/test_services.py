@@ -7,8 +7,9 @@ from datetime import date, timedelta
 import pytest
 
 from shukatsu_tracker import constants
-from shukatsu_tracker.db import DuplicateKeyError, StepRepository
+from shukatsu_tracker.db import DatabaseError, DuplicateKeyError, StepRepository
 from shukatsu_tracker.models import Company, EsAnswer
+from shukatsu_tracker.services import StepChange
 
 
 def days_from_today(offset: int) -> str:
@@ -72,6 +73,42 @@ class TestSteps:
         step_id = selection.steps_of(company_id)[0].id or -1
         selection.update_step(step_id)
         assert selection.steps_of(company_id)[0].result == "選考中"
+
+    def test_updating_many_steps_validates_every_row_before_writing(self, selection):
+        """2行目が不正なら、1行目も書かれないこと。"""
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        first, second = [s.id or -1 for s in selection.steps_of(company_id)[:2]]
+        with pytest.raises(ValueError, match="未定義の選考結果"):
+            selection.update_steps(
+                [StepChange(first, result="通過"), StepChange(second, result="なんとなく")]
+            )
+        assert [s.result for s in selection.steps_of(company_id)[:2]] == ["選考中", "選考中"]
+
+    def test_a_failure_midway_leaves_no_step_updated(self, selection, monkeypatch):
+        """3行目の書き込みで失敗したら、1〜2行目も残らないこと。"""
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        ids = [s.id or -1 for s in selection.steps_of(company_id)[:3]]
+        original = StepRepository.update
+        calls = 0
+
+        def flaky(repository, step_id, **fields):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                raise DatabaseError("3行目で失敗")
+            return original(repository, step_id, **fields)
+
+        monkeypatch.setattr(StepRepository, "update", flaky)
+        with pytest.raises(DatabaseError, match="3行目で失敗"):
+            selection.update_steps([StepChange(step_id, result="通過") for step_id in ids])
+        assert {s.result for s in selection.steps_of(company_id)[:3]} == {"選考中"}
+
+    def test_updating_many_steps_counts_only_rows_with_a_change(self, selection):
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        first, second = [s.id or -1 for s in selection.steps_of(company_id)[:2]]
+        assert selection.update_steps([StepChange(first, result="通過"), StepChange(second)]) == 1
+        assert selection.update_steps([]) == 0
+        assert [s.result for s in selection.steps_of(company_id)[:2]] == ["通過", "選考中"]
 
     def test_add_step_reads_the_order_inside_the_transaction(self, conn, selection, monkeypatch):
         """並び順を決める読み取りが、書き込みと同じ境界の中で行われること。"""
