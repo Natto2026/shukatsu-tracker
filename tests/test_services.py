@@ -185,15 +185,42 @@ class TestSteps:
         """並び順を決める読み取りが、書き込みと同じ境界の中で行われること。"""
         company_id = selection.add_company(Company(name="テスト株式会社"), with_default_steps=False)
         depths: list[int] = []
-        original = StepRepository.list_for_company
+        original = StepRepository.next_sort_order
 
         def spy(repository, target_id):
             depths.append(conn.depth)
             return original(repository, target_id)
 
-        monkeypatch.setattr(StepRepository, "list_for_company", spy)
+        monkeypatch.setattr(StepRepository, "next_sort_order", spy)
         selection.add_step(company_id, "リクルーター面談")
         assert depths == [1]
+
+    def test_add_step_locks_the_company_row_before_reading_the_order(self, conn, selection):
+        """同じ企業への同時の追加を直列化するため、並び順を読む前に企業の行をロックすること。"""
+        company_id = selection.add_company(Company(name="テスト株式会社"), with_default_steps=False)
+        with conn.record() as executed:
+            selection.add_step(company_id, "リクルーター面談")
+        lock = next(i for i, sql in enumerate(executed) if "FROM companies WHERE id = ?" in sql)
+        order = next(i for i, sql in enumerate(executed) if "MAX(sort_order)" in sql)
+        assert "{{FOR_UPDATE}}" in executed[lock]
+        assert lock < order
+
+    def test_a_step_added_after_a_deletion_does_not_collide(self, selection):
+        """途中のステップを消したあとの追加が、既存の並び順と衝突しないこと。
+
+        件数を並び順にしていると、0..5 から 2 を消して足したときに 5 が2つになる。
+        """
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        steps = selection.steps_of(company_id)
+        selection.delete_step(steps[2].id or -1)
+        selection.add_step(company_id, "リクルーター面談")
+        orders = [s.sort_order for s in selection.steps_of(company_id)]
+        assert len(orders) == len(set(orders))
+        assert selection.steps_of(company_id)[-1].name == "リクルーター面談"
+
+    def test_adding_a_step_to_a_missing_company_is_reported(self, selection):
+        with pytest.raises(ValueError, match="企業が見つかりません"):
+            selection.add_step(999, "リクルーター面談")
 
 
 class TestDashboard:
