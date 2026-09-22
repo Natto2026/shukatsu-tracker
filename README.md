@@ -182,7 +182,7 @@ UI・ユースケース・永続化を層として分け、上の層が下の層
 app.py（画面）
    └─ services/（業務ルール・入力検証・トランザクションの単位）
         └─ db/（接続・スキーマ適用・テーブルごとの読み書き）
-             └─ SQLite
+             └─ SQLite / PostgreSQL（方言の差は `db/dialects.py` が吸収する）
 analytics.py（集計）は DB にも UI にも依存しない純粋関数
 review/（観点の定義・依頼文の組み立て・実行先）は services から呼ばれる
 ```

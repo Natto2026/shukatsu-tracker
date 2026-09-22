@@ -26,6 +26,7 @@
 
 ### Changed
 - README をである調に統一する。内容と行構成は変えていない
+- README の層の図に PostgreSQL を書き足す。本文では両対応と書きながら、図は SQLite だけだった
 - CI: `GITHUB_TOKEN` を読み取り専用にし、同じブランチへの連続 push で古い実行を止め、pip をキャッシュする。SQLite のテストに Python 3.12 を足し、PostgreSQL のジョブでも網羅率を出す（方言の分岐は SQLite のジョブでは通らないため）
 - `.gitignore` に `.env`・`.streamlit/secrets.toml`・`*.db-wal`・`*.db-shm`・`htmlcov/`・`dist/` などを追加。認証情報と SQLite の付随ファイルが `git add .` で混入しないようにした
 - README の「見つけた不具合と直し方」の表を docs/known_issues.md に移し、README には要約と参照だけを残した（表が12行に伸び、README の主題である使い方が埋もれるため）
