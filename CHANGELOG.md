@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Changed
+- 文書の括弧を全角に揃える。コード・リンク・URL の中は半角のまま
+
 ## [0.9.0] - 2026-09-23
 
 ### Fixed
@@ -50,13 +53,13 @@
 - README の「現在の利用状況」を更新。CSV の取り込みは入ったが、作者自身のデータの移行はまだ行っていない
 - メニューに「取り込み」が増えたため、スクリーンショットを撮り直した
 - scripts/demo_data.py の研究内容のサンプル文を、実在の研究を連想させない架空の題材に差し替えた（デモデータは内容もすべて架空にする）
-- `pyproject.toml` に `readme`・`license`(MIT)・`license-files`・`authors` を追加。SPDX 形式の `license` に合わせて、ビルドに使う setuptools の下限を 77 に引き上げた
+- `pyproject.toml` に `readme`・`license`（MIT）・`license-files`・`authors` を追加。SPDX 形式の `license` に合わせて、ビルドに使う setuptools の下限を 77 に引き上げた
 - `# pragma: no cover` を付けていながら網羅率を計測する設定がなかったため、`pytest-cov` を dev 依存に、coverage の設定を pyproject.toml に追加。CI の SQLite のテストで網羅率を出力する（記録のみで、しきい値では落とさない）
-- CONTRIBUTING.md のブランチ運用に、適用範囲(0.7.0 から。それ以前の PR は main 向き)と、1人の開発でこの運用を置いている理由を追記。Issue 番号をブランチ名に入れるのは対応する Issue がある場合、と明記した
+- CONTRIBUTING.md のブランチ運用に、適用範囲（0.7.0 から。それ以前の PR は main 向き）と、1人の開発でこの運用を置いている理由を追記。Issue 番号をブランチ名に入れるのは対応する Issue がある場合、と明記した
 - 文書の取り残しを実装と規約に合わせた。docs/architecture.md の開発フロー（develop／release の流れ）と構成ツリー（`scripts/capture_screenshots.py`）、CONTRIBUTING.md のスクリーンショット更新手順（自動撮影スクリプト）、README の finance.toml 抜粋の `emphasis`・SQL を書く場所の説明・`SHUKATSU_REVIEW_MODEL` の既定値、docs/data_flow.md の書き出しの説明
 - ES管理の絞り込みを `EsService.search` に戻した。画面が同じ判定（カテゴリとキーワード）を自前で持っており、「UI にロジックを書かない」という規約とサービス層の検索の両方から外れていた
-- `streamlit` の下限を 1.36 から 1.51 に引き上げ。`width="stretch"` を st.dataframe(1.49 から対応)と st.altair_chart(1.51 から対応)に渡しており、宣言していた下限では動かなかった
-- README に現在の利用状況を明記。作者自身の選考管理は今もスプレッドシートで、このアプリは移行経路(#8)ができるまで使っていない。スプレッドシートの課題の話がアプリの運用実績に読めていた。docs/operations.md も題を「起動と保守の手引き」に改め、運用実績を前提にしない書き方にした
+- `streamlit` の下限を 1.36 から 1.51 に引き上げ。`width="stretch"` を st.dataframe（1.49 から対応）と st.altair_chart（1.51 から対応）に渡しており、宣言していた下限では動かなかった
+- README に現在の利用状況を明記。作者自身の選考管理は今もスプレッドシートで、このアプリは移行経路（#8）ができるまで使っていない。スプレッドシートの課題の話がアプリの運用実績に読めていた。docs/operations.md も題を「起動と保守の手引き」に改め、運用実績を前提にしない書き方にした
 
 ### Fixed
 - 画面の表記を揃えた。メニュー「添削」とページの題「回答への所見」の不一致、分析ページの表の見出しが `step` のままだった点、選考ファネルの Y 軸で長いステップ名が「…」で切れていた点。スクリーンショット（添削・分析）も撮り直した
@@ -81,13 +84,13 @@
 ### Added
 - 添削で Claude API に送るモデルを環境変数 `SHUKATSU_REVIEW_MODEL` で差し替えられるようにした（未設定なら従来どおり既定のモデル）。モデルを変えるためにコードを直さずに済む
 - `pyproject.toml` の依存に `altair` を明記（app.py が直接 import しているが、streamlit の依存として入ってくるのに頼っていた）
-- スクリーンショットをデモデータから自動で撮り直すスクリプト(`scripts/capture_screenshots.py`)
-- README のスクリーンショットを現在の画面に更新(添削・企業管理を追加)
+- スクリーンショットをデモデータから自動で撮り直すスクリプト（`scripts/capture_screenshots.py`）
+- README のスクリーンショットを現在の画面に更新（添削・企業管理を追加）
 
 ### Changed
 - ブランチ運用を main / develop / 作業ブランチの3層に変更。CONTRIBUTING.md にブランチの役割・開発フロー・リリース手順を明記し、CI の push 対象に develop を追加。既定ブランチは develop
 - scripts/demo_data.py のデモデータ配列を `# fmt: off` で囲み、1件=1行の表として読める並びを保つようにした
-- README に、総点検で見つけた不具合と直し方の一覧を追加(症状・原因・対処・回帰テストの対応表)
+- README に、総点検で見つけた不具合と直し方の一覧を追加（症状・原因・対処・回帰テストの対応表）
 - docs/data_flow.md に ER 図と索引の一覧、docs/screens.md に画面一覧（できること・呼ぶ層・書き込みの有無）を追加
 - docs/test_plan.md にテスト観点表（観点とテスト名の対応）を追加
 - docs/operations.md に運用手順（起動・保存先・バックアップと復旧・スキーマ更新時の挙動・困ったとき）を追加
@@ -176,34 +179,34 @@
 ### Added
 - ruff による静的解析を導入し、CI に lint ジョブを追加
 - PR / Issue テンプレートを追加
-- 設計文書を追加(docs/architecture.md・docs/data_flow.md)、開発規約を CONTRIBUTING.md に明文化
+- 設計文書を追加（docs/architecture.md・docs/data_flow.md）、開発規約を CONTRIBUTING.md に明文化
 - AI 書き出しに認証情報が含まれないことを保証する回帰テストと画面表記を追加
 
 ### Changed
 - UI・文書の絵文字を撤去し、表記をプレーンに統一
 
 ### Fixed
-- 企業一覧の志望度ソートが文字列順(A→B→C→S)になっており、志望度Sが末尾に表示される問題を修正
-- 選考ファネルのステップが辞書順で描画される問題を修正(Altair で選考順に固定)
-- README のテスト件数の記載が古くなる問題(件数を書かず CI を参照する形に変更)
+- 企業一覧の志望度ソートが文字列順（A→B→C→S）になっており、志望度Sが末尾に表示される問題を修正
+- 選考ファネルのステップが辞書順で描画される問題を修正（Altair で選考順に固定）
+- README のテスト件数の記載が古くなる問題（件数を書かず CI を参照する形に変更）
 
 ## 0.2.0 - 2026-08-01（履歴整理前・タグなし）
 
 ### Added
-- 企業研究リンクの自動生成(公式・採用・事業内容・IR・クチコミ・選考体験記・ニュース)
-- AI分析ページ: 選考データを分析依頼プロンプトつき Markdown に書き出し(アプリ自体は AI と通信しない)
-- デモデータ生成スクリプト `scripts/demo_data.py`(架空企業8社)
+- 企業研究リンクの自動生成（公式・採用・事業内容・IR・クチコミ・選考体験記・ニュース）
+- AI分析ページ: 選考データを分析依頼プロンプトつき Markdown に書き出し（アプリ自体は AI と通信しない）
+- デモデータ生成スクリプト `scripts/demo_data.py`（架空企業8社）
 - README に実画面スクリーンショット4枚を掲載
 
 ### Fixed
-- 選考ファネルの配色を直感に合わせ修正(通過=緑 / 落選=赤)
+- 選考ファネルの配色を直感に合わせ修正（通過=緑 / 落選=赤）
 - サーバーを 127.0.0.1 のみにバインドし、同一LAN内への意図しない公開を防止
 
 ## 0.1.0 - 2026-08-01（履歴整理前・タグなし）
 
 ### Added
-- 初版: ダッシュボード(締切アラート)・企業管理・ES設問ライブラリ・通過率分析
-- SQLite ローカル保存(パスワード非保存方針)、pytest によるテスト、GitHub Actions CI
+- 初版: ダッシュボード（締切アラート）・企業管理・ES設問ライブラリ・通過率分析
+- SQLite ローカル保存（パスワード非保存方針）、pytest によるテスト、GitHub Actions CI
 
 [Unreleased]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.9.0...HEAD
 [0.9.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.8.0...v0.9.0

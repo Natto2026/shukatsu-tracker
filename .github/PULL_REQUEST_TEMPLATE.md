@@ -1,6 +1,6 @@
 ## 概要
 
-<!-- 向き先は develop(リリース PR と hotfix だけ main) -->
+<!-- 向き先は develop（リリース PR と hotfix だけ main） -->
 
 <!-- このPRで何を変えるか、1〜3行で -->
 
