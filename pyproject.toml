@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shukatsu-tracker"
-version = "0.8.0"
+version = "0.9.0"
 description = "就活の選考状況をローカルで一元管理・分析するツール"
 readme = "README.md"
 license = "MIT"

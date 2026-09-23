@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-23
+
 ### Fixed
 - **COMMIT が一度失敗すると、以後の書き込みが確定も巻き戻しもされない問題を修正**。失敗時に境界の深さを戻しておらず、次の境界が入れ子と誤認されて BEGIN も ROLLBACK も発行されなかった。開いたままのトランザクションが書き込みロックを握り続け、別のセッションの起動も「database is locked」で止まっていた。COMMIT・ROLLBACK は失敗しても深さを戻し、COMMIT が失敗したら ROLLBACK を試みてから元の例外を上げる
 - **ロック待ちの超過や接続の切断で、画面に生のトレースバックが出る問題を修正**。翻訳していたのは一意制約と外部キーの違反だけで、BEGIN / COMMIT は翻訳を通っていなかった。ドライバの例外をすべて共通の型（`BusyError`・`ConnectionLostError`・`DatabaseError`）に翻訳し、BEGIN / COMMIT / ROLLBACK も同じ経路を通す
@@ -203,7 +205,8 @@
 - 初版: ダッシュボード(締切アラート)・企業管理・ES設問ライブラリ・通過率分析
 - SQLite ローカル保存(パスワード非保存方針)、pytest によるテスト、GitHub Actions CI
 
-[Unreleased]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.5.0...v0.6.0
