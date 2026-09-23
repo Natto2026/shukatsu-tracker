@@ -568,7 +568,7 @@ class TestCsvImport:
 
 class TestLabels:
     def test_review_page_title_matches_the_menu(self, app_db):
-        """メニューの項目名とページの題がずれていないこと。"""
+        """添削のページの題が、メニューの項目名とずれていないこと。"""
         at = open_page(app_db, "添削")
         assert [t.value for t in at.title] == ["添削"]
 
