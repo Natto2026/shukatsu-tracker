@@ -28,8 +28,10 @@ main / develop / 作業ブランチの3層で運用する。
 ## 開発フロー
 
 1. Issue を立てる(または既存の Issue を選ぶ)。小さな修正は Issue なしで始めてよい
-2. develop から作業ブランチを切る
+2. develop から作業ブランチを切る。依存は `pip install -e ".[dev]" -c constraints.txt` で入れる
+   (CI と同じ版にそろえるため。版を上げるときは、全部通してから `constraints.txt` を書き換える)
 3. PR 前にローカルで `ruff check .`・`ruff format --check .`・`python -m mypy`・`python -m pytest` をすべて通す
+   (書きながら回すときは `python -m pytest -m "not ui"` で画面のテストを外してよい。PR 前は全部)
 4. 挙動を変える修正には回帰テストを添える
 5. CHANGELOG.md の Unreleased に追記してから、develop への PR を出す
 6. CI が緑になったらマージし、作業ブランチを削除する
@@ -45,7 +47,8 @@ main / develop / 作業ブランチの3層で運用する。
 
 ## 絶対に守ること(セキュリティ)
 
-- `data/` 配下・`*.db` をコミットしない(個人の選考データが入っている)
+- `data/` 配下・`*.db` をコミットしない(個人の選考データが入っている)。WAL(`*.db-wal`)も同じ
+- `.env` や `.streamlit/secrets.toml` に API キーを書いた場合も、コミットしない(.gitignore で除外している)
 - パスワードを保存する機能を追加しない
 - `ai_export.py` の書き出しにマイページ URL・ログイン用メールを含めない
   (tests/test_research_and_export.py の回帰テストが監視している)
@@ -67,6 +70,7 @@ main / develop / 作業ブランチの3層で運用する。
     適用済みバージョンを記録する INSERT、db/database.py が組み立てる INSERT / UPDATE の
     ひな形がこれにあたる。テーブルごとの読み書きをここに足さない
 - 列名を動的に組み立てる場合は、リポジトリの `writable` に列挙した名前だけを通す
+- 選択肢（constants）と締切の書式の検証は services/ に置く。画面や CSV の取り込みだけに置かない
 - **スキーマ変更は新しい migration ファイルで行う**。適用済みの .sql は編集しない
 - 書き込みは services/ 側で `transaction()` に包む。repositories を裸で呼ばない
 - SQL は `?` で書く。方言差は db/dialects.py に足す。SQL ファイルを方言ごとに分けない

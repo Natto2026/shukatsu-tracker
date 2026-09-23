@@ -13,11 +13,14 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from shukatsu_tracker import db
-from shukatsu_tracker.db import transaction
+from shukatsu_tracker.db import CompanyRepository, DatabaseError, StepRepository, transaction
 from shukatsu_tracker.models import Company, EsAnswer
-from shukatsu_tracker.services import EsService, SelectionService
+from shukatsu_tracker.services import EsService, ReviewService, SelectionService
 
 APP_PATH = str(Path(__file__).parent.parent / "app.py")
+
+# AppTest はアプリ全体を実行するので遅い。日常は `-m "not ui"` で外せるようにしておく
+pytestmark = pytest.mark.ui
 
 
 @pytest.fixture
@@ -33,11 +36,19 @@ def open_db(path):
 
 
 def seed_company(path, *, deadline: str | None = None) -> tuple[int, int]:
+    """企業とステップを1件ずつ入れる。
+
+    読めない書式の締切は、サービス層が拒否するようになったため、検証が入る前に
+    保存された古いデータとしてリポジトリから直接書く。
+    """
     database = open_db(path)
     try:
         selection = SelectionService(database)
         company_id = selection.add_company(Company(name="テスト株式会社"), with_default_steps=False)
-        step_id = selection.add_step(company_id, "ES", deadline=deadline)
+        step_id = selection.add_step(company_id, "ES")
+        if deadline is not None:
+            with transaction(database):
+                StepRepository(database).update(step_id, deadline=deadline)
     finally:
         database.close()
     return company_id, step_id
@@ -173,6 +184,57 @@ class TestNoWriteOnRender:
         assert any("1 件を保存しました" in i.value for i in at.info)
 
 
+class TestValuesOutsideTheChoices:
+    """定数を変える前に保存した値があっても、画面が落ちず、黙って書き換えないこと。"""
+
+    def test_company_page_renders_a_legacy_value_instead_of_crashing(self, app_db):
+        company_id, step_id = seed_company(app_db)
+        database = open_db(app_db)
+        try:
+            with transaction(database):
+                CompanyRepository(database).update(company_id, priority="Z")
+                StepRepository(database).update(step_id, result="保留")
+        finally:
+            database.close()
+
+        at = open_page(app_db, "企業管理")
+        # 「志望度」は追加フォームにもあるので、編集フォーム側（末尾）を見る
+        priority = [s for s in at.selectbox if s.label == "志望度"][-1]
+        assert priority.value == "Z"
+        assert "Z" in priority.options
+        result = [s for s in at.selectbox if s.label == "結果"][0]
+        assert result.value == "保留"
+
+    def test_saving_untouched_steps_keeps_a_legacy_result(self, app_db):
+        _, step_id = seed_company(app_db)
+        database = open_db(app_db)
+        try:
+            with transaction(database):
+                StepRepository(database).update(step_id, result="保留")
+        finally:
+            database.close()
+
+        at = open_page(app_db, "企業管理")
+        [b for b in at.button if b.label == "選考ステップを保存"][0].click().run()
+        assert not at.exception, at.exception
+        assert read_step(app_db, step_id)[1] == "保留"
+
+    def test_updating_a_company_with_a_legacy_value_is_refused_with_a_message(self, app_db):
+        """古い値のまま「更新」を押すと、選択肢から選び直すよう文面で伝えること。"""
+        company_id, _ = seed_company(app_db)
+        database = open_db(app_db)
+        try:
+            with transaction(database):
+                CompanyRepository(database).update(company_id, priority="Z")
+        finally:
+            database.close()
+
+        at = open_page(app_db, "企業管理")
+        [b for b in at.button if b.label == "更新"][0].click().run()
+        assert not at.exception, at.exception
+        assert any("志望度「Z」は選択肢にありません" in e.value for e in at.error)
+
+
 class TestErrorsAreFriendly:
     def test_duplicate_company_name_shows_a_message_not_a_traceback(self, app_db):
         seed_company(app_db)
@@ -184,6 +246,41 @@ class TestErrorsAreFriendly:
 
         assert not at.exception, at.exception
         assert any("すでに登録されています" in e.value for e in at.error)
+
+    def test_a_failed_step_save_shows_a_message_and_writes_nothing(self, app_db, monkeypatch):
+        """保存の途中で失敗したら、生の例外ではなく文面で伝え、どの行も書かれないこと。
+
+        行ごとに別の境界で書いていると、2行目の失敗で1行目だけが残ったうえに
+        トレースバックが出る。
+        """
+        company_id, first_id = seed_company(app_db, deadline="2026-10-01")
+        database = open_db(app_db)
+        try:
+            second_id = SelectionService(database).add_step(company_id, "1次面接")
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+
+        original = StepRepository.update
+        calls = 0
+
+        def flaky(repository, step_id, **fields):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise DatabaseError("2行目で失敗")
+            return original(repository, step_id, **fields)
+
+        monkeypatch.setattr(StepRepository, "update", flaky)
+        results = [s for s in at.selectbox if s.label == "結果"]
+        results[0].set_value("通過")
+        results[1].set_value("落選")
+        [b for b in at.button if b.label == "選考ステップを保存"][0].click().run()
+
+        assert not at.exception, at.exception
+        assert any("保存できませんでした" in e.value for e in at.error)
+        assert read_step(app_db, first_id)[1] == "選考中"
+        assert read_step(app_db, second_id)[1] == "選考中"
 
     def test_blank_company_name_is_reported(self, app_db):
         seed_company(app_db)
@@ -238,13 +335,55 @@ class TestDestructiveActionsNeedConfirmation:
     def test_delete_is_disabled_until_confirmed(self, app_db):
         company_id, _ = seed_company(app_db)
         at = open_page(app_db, "企業管理")
-        delete_buttons = [b for b in at.button if b.label == "削除する"]
-        assert delete_buttons, "削除ボタンが見つからない"
-        assert delete_buttons[0].disabled
+        # 「削除する」はステップの確認にもあるので、企業のものはキーで選ぶ
+        assert at.button(key="delete_company").disabled
 
         database = open_db(app_db)
         try:
             assert SelectionService(database).company(company_id) is not None
+        finally:
+            database.close()
+
+    def test_step_delete_is_behind_a_confirmation(self, app_db):
+        """ステップの削除は、何が失われるかを見せた上の「削除する」だけで行えること。"""
+        company_id, step_id = seed_company(app_db)
+        at = open_page(app_db, "企業管理")
+
+        assert not [b for b in at.button if b.label == "削除"], "1クリックで消える削除ボタンが残っている"
+        button = at.button(key=f"delstep{step_id}")
+        assert button.label == "削除する"
+        assert any("元に戻せません" in w.value for w in at.warning)
+
+        button.click().run()
+        assert not at.exception, at.exception
+        database = open_db(app_db)
+        try:
+            assert SelectionService(database).steps_of(company_id) == []
+        finally:
+            database.close()
+
+    def test_review_delete_is_behind_a_confirmation(self, app_db):
+        """所見の削除も同じ扱いであること。"""
+        answer_id = seed_answer(app_db)
+        database = open_db(app_db)
+        try:
+            es = EsService(database)
+            stored = es.answer(answer_id)
+            assert stored is not None
+            review_id = ReviewService(database).run(stored).id
+        finally:
+            database.close()
+        at = open_page(app_db, "添削")
+
+        assert not [b for b in at.button if b.label == "削除"]
+        button = at.button(key=f"rm_review_{review_id}")
+        assert button.label == "削除する"
+
+        button.click().run()
+        assert not at.exception, at.exception
+        database = open_db(app_db)
+        try:
+            assert ReviewService(database).history(answer_id) == []
         finally:
             database.close()
 
@@ -254,7 +393,7 @@ class TestDestructiveActionsNeedConfirmation:
         confirm = [c for c in at.checkbox if "削除することを理解しました" in c.label]
         assert confirm, "確認のチェックが見つからない"
         confirm[0].set_value(True).run()
-        [b for b in at.button if b.label == "削除する"][0].click().run()
+        at.button(key="delete_company").click().run()
         assert not at.exception, at.exception
 
         database = open_db(app_db)
@@ -262,6 +401,66 @@ class TestDestructiveActionsNeedConfirmation:
             assert SelectionService(database).company(company_id) is None
         finally:
             database.close()
+
+
+def seed_answer(path, text: str = "初稿") -> int:
+    database = open_db(path)
+    try:
+        return EsService(database).add(EsAnswer(question="志望動機", category="志望動機", answer=text))
+    finally:
+        database.close()
+
+
+def read_answer(path, answer_id: int) -> str:
+    database = open_db(path)
+    try:
+        stored = EsService(database).answer(answer_id)
+        assert stored is not None
+        return stored.answer
+    finally:
+        database.close()
+
+
+def answer_text_area(at: AppTest):
+    """回答一覧の入力欄。「設問・回答を追加」の入力欄も同じラベルなので、末尾を取る。"""
+    areas = [t for t in at.text_area if t.label == "回答"]
+    assert len(areas) >= 2, "回答の入力欄が見つからない"
+    return areas[-1]
+
+
+class TestEsStaleTab:
+    """ES 本文でも、古いタブが新しい変更を潰さないこと（選考ステップと同じ性質）。
+
+    更新日は日付単位なので、同じ日のうちの更新は入力欄のキーで見分けられなかった。
+    """
+
+    def test_a_stale_tab_cannot_overwrite_a_newer_answer(self, app_db):
+        answer_id = seed_answer(app_db)
+        at = open_page(app_db, "ES管理")
+
+        database = open_db(app_db)
+        try:
+            EsService(database).update_text(answer_id, "第二稿")  # 同じ日のうちの更新
+        finally:
+            database.close()
+
+        answer_text_area(at).set_value("古いタブの編集")
+        at.button(key=f"save{answer_id}").click().run()
+
+        assert not at.exception, at.exception
+        assert read_answer(app_db, answer_id) == "第二稿"
+        assert any("他の場所で更新された" in w.value for w in at.warning)
+        assert not any("変更はありませんでした" in i.value for i in at.info)
+
+    def test_saving_from_a_fresh_tab_still_works(self, app_db):
+        answer_id = seed_answer(app_db)
+        at = open_page(app_db, "ES管理")
+        answer_text_area(at).set_value("推敲した本文")
+        at.button(key=f"save{answer_id}").click().run()
+
+        assert not at.exception, at.exception
+        assert read_answer(app_db, answer_id) == "推敲した本文"
+        assert not any("他の場所で更新された" in w.value for w in at.warning)
 
 
 class TestEsLibraryFilter:
@@ -395,6 +594,21 @@ class TestConnectionScope:
         second = AppTest.from_file(APP_PATH, default_timeout=60).run()
         assert not first.exception and not second.exception
         assert first.session_state["db"] is not second.session_state["db"]
+
+    def test_a_dead_connection_is_reopened_on_the_next_run(self, app_db):
+        """サーバーの再起動などで接続が死んでも、次の再描画で張り直すこと。
+
+        死んだ接続を持ち続けると、以後の操作がすべて生の例外で失敗する。
+        """
+        seed_company(app_db)
+        at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+        assert not at.exception, at.exception
+        at.session_state["db"].close()
+
+        at.run()
+        assert not at.exception, at.exception
+        assert at.session_state["db"].ping()
+        assert {m.label: m.value for m in at.metric}["エントリー企業"] == "1 社"
 
 
 def test_write_through_the_app_is_visible_to_another_connection(app_db):

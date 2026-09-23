@@ -121,6 +121,9 @@ class Review:
     answer_snapshot: str
     industry: str = ""
     model: str | None = None
+    # 実行にかかったトークン数。通信しない実行先では None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
     created_at: str | None = None
     id: int | None = None
 

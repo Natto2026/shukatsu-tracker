@@ -7,8 +7,9 @@ from datetime import date, timedelta
 import pytest
 
 from shukatsu_tracker import constants
-from shukatsu_tracker.db import DuplicateKeyError, StepRepository
+from shukatsu_tracker.db import DatabaseError, DuplicateKeyError, StepRepository
 from shukatsu_tracker.models import Company, EsAnswer
+from shukatsu_tracker.services import StaleAnswerError, StepChange
 
 
 def days_from_today(offset: int) -> str:
@@ -41,6 +42,59 @@ class TestAddCompany:
         assert len(selection.all_step_views()) == len(constants.DEFAULT_STEPS)
 
 
+class TestCompanyValidation:
+    """選択肢と書式の検証がサービス層にあること（画面や CSV だけに置かない）。"""
+
+    @pytest.mark.parametrize(
+        ("field", "value", "label"),
+        [
+            ("industry", "宇宙", "業界"),
+            ("priority", "Z", "志望度"),
+            ("route", "縁故", "応募経路"),
+            ("test_type", "口頭試問", "適性検査"),
+        ],
+    )
+    def test_a_value_outside_the_choices_is_rejected_on_add(self, selection, field, value, label):
+        with pytest.raises(ValueError, match=f"{label}「{value}」は選択肢にありません"):
+            selection.add_company(Company(name="テスト株式会社", **{field: value}))
+        assert selection.companies() == []
+
+    def test_a_value_outside_the_choices_is_rejected_on_update(self, selection):
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        with pytest.raises(ValueError, match="志望度「Z」は選択肢にありません"):
+            selection.update_company(company_id, priority="Z")
+        company = selection.company(company_id)
+        assert company is not None
+        assert company.priority == "B"
+
+    def test_update_trims_the_name_and_rejects_a_blank_one(self, selection):
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        selection.update_company(company_id, name="  新社名  ")
+        company = selection.company(company_id)
+        assert company is not None
+        assert company.name == "新社名"
+        with pytest.raises(ValueError, match="企業名は必須"):
+            selection.update_company(company_id, name="   ")
+
+    def test_url_and_email_are_trimmed(self, selection):
+        """先頭の空白が付いた URL は「リンクとして開ける」判定に落ちるので、除いて保存する。"""
+        company_id = selection.add_company(
+            Company(name="テスト株式会社", mypage_url=" https://example.com/ ", login_email=" a@example.com ")
+        )
+        company = selection.company(company_id)
+        assert company is not None
+        assert (company.mypage_url, company.login_email) == ("https://example.com/", "a@example.com")
+        selection.update_company(company_id, mypage_url="  https://example.com/mypage ")
+        company = selection.company(company_id)
+        assert company is not None
+        assert company.mypage_url == "https://example.com/mypage"
+
+    def test_updating_no_fields_writes_nothing(self, selection):
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        selection.update_company(company_id)
+        assert selection.company(company_id) is not None
+
+
 class TestSteps:
     def test_added_step_goes_to_the_end(self, selection):
         company_id = selection.add_company(Company(name="テスト株式会社"))
@@ -58,6 +112,24 @@ class TestSteps:
         with pytest.raises(ValueError, match="未定義の選考結果"):
             selection.update_step(step_id, result="なんとなく通過")
 
+    @pytest.mark.parametrize("value", ["来週", "2026/10/01", "2026-13-01", "10月1日"])
+    def test_an_unreadable_deadline_is_rejected_not_nulled(self, selection, value):
+        """読めない締切を黙って空にしない。空にすると締切一覧から消えて気づけない。"""
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        step_id = selection.steps_of(company_id)[0].id or -1
+        with pytest.raises(ValueError, match="YYYY-MM-DD"):
+            selection.add_step(company_id, "リクルーター面談", deadline=value)
+        with pytest.raises(ValueError, match="YYYY-MM-DD"):
+            selection.update_step(step_id, deadline=value)
+        assert len(selection.steps_of(company_id)) == len(constants.DEFAULT_STEPS)
+        assert selection.steps_of(company_id)[0].deadline is None
+
+    def test_a_readable_deadline_is_stored_in_iso_form(self, selection):
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        step_id = selection.add_step(company_id, "リクルーター面談", deadline="2026-10-01")
+        selection.update_step(step_id, deadline="2026-11-05")
+        assert selection.steps_of(company_id)[-1].deadline == "2026-11-05"
+
     def test_deadline_can_be_cleared_without_touching_the_result(self, selection):
         company_id = selection.add_company(Company(name="テスト株式会社"))
         step_id = selection.steps_of(company_id)[0].id or -1
@@ -73,19 +145,82 @@ class TestSteps:
         selection.update_step(step_id)
         assert selection.steps_of(company_id)[0].result == "選考中"
 
+    def test_updating_many_steps_validates_every_row_before_writing(self, selection):
+        """2行目が不正なら、1行目も書かれないこと。"""
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        first, second = [s.id or -1 for s in selection.steps_of(company_id)[:2]]
+        with pytest.raises(ValueError, match="未定義の選考結果"):
+            selection.update_steps(
+                [StepChange(first, result="通過"), StepChange(second, result="なんとなく")]
+            )
+        assert [s.result for s in selection.steps_of(company_id)[:2]] == ["選考中", "選考中"]
+
+    def test_a_failure_midway_leaves_no_step_updated(self, selection, monkeypatch):
+        """3行目の書き込みで失敗したら、1〜2行目も残らないこと。"""
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        ids = [s.id or -1 for s in selection.steps_of(company_id)[:3]]
+        original = StepRepository.update
+        calls = 0
+
+        def flaky(repository, step_id, **fields):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                raise DatabaseError("3行目で失敗")
+            return original(repository, step_id, **fields)
+
+        monkeypatch.setattr(StepRepository, "update", flaky)
+        with pytest.raises(DatabaseError, match="3行目で失敗"):
+            selection.update_steps([StepChange(step_id, result="通過") for step_id in ids])
+        assert {s.result for s in selection.steps_of(company_id)[:3]} == {"選考中"}
+
+    def test_updating_many_steps_counts_only_rows_with_a_change(self, selection):
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        first, second = [s.id or -1 for s in selection.steps_of(company_id)[:2]]
+        assert selection.update_steps([StepChange(first, result="通過"), StepChange(second)]) == 1
+        assert selection.update_steps([]) == 0
+        assert [s.result for s in selection.steps_of(company_id)[:2]] == ["通過", "選考中"]
+
     def test_add_step_reads_the_order_inside_the_transaction(self, conn, selection, monkeypatch):
         """並び順を決める読み取りが、書き込みと同じ境界の中で行われること。"""
         company_id = selection.add_company(Company(name="テスト株式会社"), with_default_steps=False)
         depths: list[int] = []
-        original = StepRepository.list_for_company
+        original = StepRepository.next_sort_order
 
         def spy(repository, target_id):
             depths.append(conn.depth)
             return original(repository, target_id)
 
-        monkeypatch.setattr(StepRepository, "list_for_company", spy)
+        monkeypatch.setattr(StepRepository, "next_sort_order", spy)
         selection.add_step(company_id, "リクルーター面談")
         assert depths == [1]
+
+    def test_add_step_locks_the_company_row_before_reading_the_order(self, conn, selection):
+        """同じ企業への同時の追加を直列化するため、並び順を読む前に企業の行をロックすること。"""
+        company_id = selection.add_company(Company(name="テスト株式会社"), with_default_steps=False)
+        with conn.record() as executed:
+            selection.add_step(company_id, "リクルーター面談")
+        lock = next(i for i, sql in enumerate(executed) if "FROM companies WHERE id = ?" in sql)
+        order = next(i for i, sql in enumerate(executed) if "MAX(sort_order)" in sql)
+        assert "{{FOR_UPDATE}}" in executed[lock]
+        assert lock < order
+
+    def test_a_step_added_after_a_deletion_does_not_collide(self, selection):
+        """途中のステップを消したあとの追加が、既存の並び順と衝突しないこと。
+
+        件数を並び順にしていると、0..5 から 2 を消して足したときに 5 が2つになる。
+        """
+        company_id = selection.add_company(Company(name="テスト株式会社"))
+        steps = selection.steps_of(company_id)
+        selection.delete_step(steps[2].id or -1)
+        selection.add_step(company_id, "リクルーター面談")
+        orders = [s.sort_order for s in selection.steps_of(company_id)]
+        assert len(orders) == len(set(orders))
+        assert selection.steps_of(company_id)[-1].name == "リクルーター面談"
+
+    def test_adding_a_step_to_a_missing_company_is_reported(self, selection):
+        with pytest.raises(ValueError, match="企業が見つかりません"):
+            selection.add_step(999, "リクルーター面談")
 
 
 class TestDashboard:
@@ -135,6 +270,29 @@ class TestEsService:
     def test_negative_char_limit_is_rejected(self, es):
         with pytest.raises(ValueError):
             es.add(EsAnswer(question="設問", char_limit=-1))
+
+    def test_update_refuses_to_overwrite_a_text_that_changed_since_it_was_shown(self, es):
+        """表示していた本文と違えば書かない。古い表示からの保存で新しい本文を潰さないため。"""
+        answer_id = es.add(EsAnswer(question="志望動機", answer="初稿"))
+        es.update_text(answer_id, "第二稿")
+        with pytest.raises(StaleAnswerError):
+            es.update_text(answer_id, "古いタブの編集", expected="初稿")
+        stored = es.answer(answer_id)
+        assert stored is not None
+        assert stored.answer == "第二稿"
+
+    def test_update_writes_when_the_shown_text_is_still_current(self, es):
+        answer_id = es.add(EsAnswer(question="志望動機", answer="初稿"))
+        es.update_text(answer_id, "第二稿", expected="初稿")
+        stored = es.answer(answer_id)
+        assert stored is not None
+        assert stored.answer == "第二稿"
+
+    def test_update_of_a_deleted_answer_is_reported(self, es):
+        answer_id = es.add(EsAnswer(question="志望動機", answer="初稿"))
+        es.delete(answer_id)
+        with pytest.raises(ValueError, match="見つかりません"):
+            es.update_text(answer_id, "第二稿", expected="初稿")
 
     def test_search_by_category_and_keyword(self, es):
         es.add(EsAnswer(question="学生時代", category="ガクチカ", answer="体育会の活動"))

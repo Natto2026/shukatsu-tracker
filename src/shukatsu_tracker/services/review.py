@@ -96,6 +96,8 @@ class ReviewService:
             prompt=result.prompt,
             result=result.text,
             answer_snapshot=answer.answer,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
         )
         with transaction(self._db):
             review_id = self._reviews.add(record)

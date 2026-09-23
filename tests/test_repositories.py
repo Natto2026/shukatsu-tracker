@@ -9,7 +9,9 @@ from shukatsu_tracker.db import (
     DuplicateKeyError,
     EsAnswerRepository,
     StepRepository,
+    transaction,
 )
+from shukatsu_tracker.db.dialects import PostgresDialect, SqliteDialect
 from shukatsu_tracker.models import Company, EsAnswer, Step
 
 
@@ -81,6 +83,25 @@ class TestStepRepository:
         steps.add(Step(company_id=company_id, name="ES"))
         companies.delete(company_id)
         assert steps.list_views() == []
+
+
+class TestRowLock:
+    """行ロックの差し込み記号が方言ごとに正しく展開されること。"""
+
+    def test_postgres_appends_for_update(self):
+        rendered = PostgresDialect().render("SELECT id FROM companies WHERE id = ? {{FOR_UPDATE}}")
+        assert rendered.rstrip().endswith("FOR UPDATE")
+
+    def test_sqlite_appends_nothing(self):
+        rendered = SqliteDialect().render("SELECT id FROM companies WHERE id = ? {{FOR_UPDATE}}")
+        assert "FOR UPDATE" not in rendered
+        assert "{{" not in rendered
+
+    def test_lock_reports_whether_the_row_exists(self, conn, companies):
+        company_id = companies.add(Company(name="テスト株式会社"))
+        with transaction(conn):
+            assert companies.lock(company_id) is True
+            assert companies.lock(999) is False
 
 
 class TestEsAnswerRepository:

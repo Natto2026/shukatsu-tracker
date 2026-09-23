@@ -13,7 +13,15 @@ import threading
 import pytest
 
 from shukatsu_tracker import db
-from shukatsu_tracker.db import DuplicateKeyError, transaction
+from shukatsu_tracker.db import (
+    BusyError,
+    Database,
+    DatabaseError,
+    DuplicateKeyError,
+    migrations,
+    transaction,
+)
+from shukatsu_tracker.db.dialects import SqliteDialect
 from shukatsu_tracker.models import Company
 from shukatsu_tracker.services import SelectionService
 
@@ -60,6 +68,7 @@ class TestSeparateConnections:
 
         開始時にロックを取らないと、境界の中で読んでから書くまでの間に別の接続が
         書き込めてしまい、読んだ値（並び順の算出など）が古くなる。
+        待ちきれなかった側には、ドライバの例外ではなく共通の BusyError が届くこと。
         """
         first = db.connect(tmp_path / "shared.db")
         second = db.connect(tmp_path / "shared.db")
@@ -67,7 +76,7 @@ class TestSeparateConnections:
         try:
             with transaction(first):
                 first.fetchall("SELECT id FROM companies")
-                with pytest.raises(sqlite3.OperationalError, match="locked"), transaction(second):
+                with pytest.raises(BusyError), transaction(second):
                     second.execute("INSERT INTO companies (name) VALUES (?)", ("割り込み社",))
             with transaction(second):
                 second.execute("INSERT INTO companies (name) VALUES (?)", ("後続社",))
@@ -177,3 +186,92 @@ class TestSharedConnection:
             service.add_company(Company(name="既存社"))
         assert company_names(conn) == ["既存社"]
         assert conn.depth == 0
+
+
+class _CommitFails:
+    """COMMIT だけを失敗させるドライバの包み。ディスクの I/O エラーや切断を模す。
+
+    `already_rolled_back` を立てると、失敗の前に自分で ROLLBACK を発行する。
+    I/O エラー時の SQLite のように、ドライバ側で巻き戻し済みの状態を再現するため。
+    """
+
+    def __init__(self, raw: sqlite3.Connection) -> None:
+        self._raw = raw
+        self.fail_next = False
+        self.already_rolled_back = False
+
+    def execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
+        if sql == "COMMIT" and self.fail_next:
+            self.fail_next = False
+            if self.already_rolled_back:
+                self._raw.execute("ROLLBACK")
+            raise sqlite3.OperationalError("disk I/O error")
+        return self._raw.execute(sql, params)
+
+    def close(self) -> None:
+        self._raw.close()
+
+
+class TestCommitFailure:
+    """COMMIT が失敗しても、境界が壊れたまま残らないこと。
+
+    修正前は COMMIT の失敗で深さが 1 のまま固着し、次の境界が入れ子と誤認されて
+    BEGIN も ROLLBACK も発行されなかった。開いたままのトランザクションが
+    書き込みロックを握り続け、別のセッションの起動も止まっていた。
+    """
+
+    @pytest.fixture
+    def flaky(self, tmp_path):
+        dialect = SqliteDialect()
+        raw = dialect.connect(str(tmp_path / "flaky.db"))
+        migrations.apply_pending(Database(raw, dialect))
+        wrapper = _CommitFails(raw)
+        database = Database(wrapper, dialect)
+        yield database, wrapper
+        database.close()
+
+    def test_a_failed_commit_resets_the_depth_and_releases_the_lock(self, tmp_path, flaky):
+        database, wrapper = flaky
+        wrapper.fail_next = True
+        with pytest.raises(DatabaseError, match="disk I/O error"), transaction(database):
+            database.execute("INSERT INTO companies (name) VALUES (?)", ("消える社",))
+        assert database.depth == 0
+        assert company_names(database) == []
+
+        # 書き込みロックが解放され、別の接続が書けること
+        other = db.connect(tmp_path / "flaky.db")
+        other.execute("PRAGMA busy_timeout = 100")
+        try:
+            with transaction(other):
+                other.execute("INSERT INTO companies (name) VALUES (?)", ("後続社",))
+        finally:
+            other.close()
+        assert company_names(database) == ["後続社"]
+
+    def test_the_next_boundary_still_rolls_back_after_a_failed_commit(self, flaky):
+        database, wrapper = flaky
+        wrapper.fail_next = True
+        with pytest.raises(DatabaseError, match="disk I/O error"), transaction(database):
+            database.execute("INSERT INTO companies (name) VALUES (?)", ("消える社",))
+
+        with pytest.raises(RuntimeError), transaction(database):
+            database.execute("INSERT INTO companies (name) VALUES (?)", ("失敗社",))
+            raise RuntimeError("途中で失敗")
+        assert company_names(database) == []
+
+        with transaction(database):
+            database.execute("INSERT INTO companies (name) VALUES (?)", ("成功社",))
+        assert company_names(database) == ["成功社"]
+        assert database.depth == 0
+
+    def test_a_commit_the_driver_already_rolled_back_does_not_mask_the_error(self, flaky):
+        database, wrapper = flaky
+        wrapper.fail_next = True
+        wrapper.already_rolled_back = True
+        with pytest.raises(DatabaseError, match="disk I/O error"), transaction(database):
+            database.execute("INSERT INTO companies (name) VALUES (?)", ("消える社",))
+        assert database.depth == 0
+
+        with transaction(database):
+            database.execute("INSERT INTO companies (name) VALUES (?)", ("成功社",))
+        assert company_names(database) == ["成功社"]

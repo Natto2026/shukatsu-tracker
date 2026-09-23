@@ -7,8 +7,9 @@
 
 - 層ごとに単体テストを置く。集計は DB を使わず、リポジトリとサービスは実際の DB で、画面は Streamlit の AppTest で検証する
 - 通信するテストは置かない。API を呼ぶ実行先は、差し込んだ偽のクライアントに対して「何を送るか」「応答をどう解釈するか」だけを見る
-- 同じテスト一式を SQLite（Python 3.11 / 3.13）と PostgreSQL の両方に対して CI で走らせる
+- 同じテスト一式を SQLite（Python 3.11 / 3.12 / 3.13）と PostgreSQL の両方に対して CI で走らせる
 - 挙動を変える修正には回帰テストを添える。追加したテストは、修正をわざと戻して失敗することまで確かめる
+- 画面のテスト（AppTest）には `ui` マーカーを付ける。1本あたり数秒かかるので、書きながら回すときは `-m "not ui"` で外す。CI は全部を回す
 
 ## 観点と対応するテスト
 
@@ -38,6 +39,7 @@
 | id 列は上書きできない | `test_id_column_cannot_be_overwritten` |
 | ステップ一覧には企業の属性が結合される | `test_views_are_joined_with_company_fields` |
 | ステップは表示順で並ぶ | `test_ordered_by_sort_order` |
+| 行ロックの差し込み記号は PostgreSQL で `FOR UPDATE`、SQLite で空になる。ロックは行の有無を返す | `TestRowLock` |
 | 企業を消すとステップも消える | `test_deleting_company_cascades_steps` |
 | 企業を消しても回答は残る | `test_answer_survives_company_deletion` |
 | 回答の更新で更新日時が進む | `test_update_refreshes_the_timestamp` |
@@ -49,10 +51,15 @@
 |---|---|
 | 企業を追加すると既定の選考ステップも入る。省略もできる | `test_default_steps_are_created`、`test_default_steps_can_be_skipped` |
 | 企業名は前後の空白を除き、空なら拒否 | `test_name_is_trimmed_and_required` |
+| 業界・志望度・応募経路・適性検査は選択肢にある値だけを受け付ける（追加も更新も）。更新でも企業名は必須で、URL とメールは空白を除く | `TestCompanyValidation` |
+| 読めない書式の締切は空にせず拒否する。読める締切は ISO 形式で保存する | `test_an_unreadable_deadline_is_rejected_not_nulled`、`test_a_readable_deadline_is_stored_in_iso_form` |
 | 重複で失敗したとき、ステップだけが残らない | `test_duplicate_name_leaves_no_orphan_steps` |
 | 追加したステップは末尾に付く | `test_added_step_goes_to_the_end` |
-| 追加するステップの並び順は、書き込みと同じ境界の中で読む | `test_add_step_reads_the_order_inside_the_transaction` |
+| 追加するステップの並び順は、書き込みと同じ境界の中で読む。読む前に企業の行をロックする | `test_add_step_reads_the_order_inside_the_transaction`、`test_add_step_locks_the_company_row_before_reading_the_order` |
+| 途中のステップを消したあとの追加が既存の並び順と衝突しない。消えた企業への追加は文面で伝える | `test_a_step_added_after_a_deletion_does_not_collide`、`test_adding_a_step_to_a_missing_company_is_reported` |
 | 空のステップ名・未定義の結果は拒否 | `test_blank_step_name_is_rejected`、`test_undefined_result_is_rejected` |
+| 回答の本文は、表示していた本文と一致するときだけ書き換える。消えた回答は文面で伝える | `test_update_refuses_to_overwrite_a_text_that_changed_since_it_was_shown`、`test_update_writes_when_the_shown_text_is_still_current`、`test_update_of_a_deleted_answer_is_reported` |
+| 複数ステップの更新は全行を検証してから1つの境界で書く。途中で失敗したら何も残らない。書いた行数を返す | `test_updating_many_steps_validates_every_row_before_writing`、`test_a_failure_midway_leaves_no_step_updated`、`test_updating_many_steps_counts_only_rows_with_a_change` |
 | 締切を消しても結果には触れない | `test_deadline_can_be_cleared_without_touching_the_result` |
 | 変更なしの更新は何もしない | `test_updating_nothing_is_a_no_op` |
 | ダッシュボードの件数・締切・期限超過の分離 | `test_counts_and_deadlines`、`test_overdue_is_separated` |
@@ -91,6 +98,7 @@
 | ファイル名が NNN_name.sql の規約に従う | `test_migration_filenames_follow_the_convention` |
 | 途中で失敗した適用は巻き戻る | `test_a_failing_migration_is_rolled_back` |
 | 外部キー制約が効いている | `test_foreign_keys_are_enforced` |
+| 一覧を読んだあとに別のプロセスが流した版は、境界の中で見直して二度流さない | `test_a_version_applied_meanwhile_is_skipped_inside_the_boundary` |
 
 ### 接続（`tests/test_connection.py`）
 
@@ -98,6 +106,7 @@
 |---|---|
 | 未対応の接続先・psycopg の未導入・届かない PostgreSQL・開けない SQLite ファイルは、どれも共通の例外になる | `test_unsupported_scheme_is_translated`、`test_missing_postgres_driver_is_translated`、`test_unreachable_postgres_is_translated_without_leaking_the_target`、`test_sqlite_file_that_cannot_be_opened_is_translated` |
 | 接続に失敗しても画面は例外ではなく文面を出し、接続文字列の中身を出さない | `test_app_shows_a_message_not_a_traceback` |
+| 接続の生死を見分けられる。切れた接続への操作は共通の型で上がる | `test_ping_tells_a_live_connection_from_a_closed_one`、`test_operating_on_a_closed_connection_is_reported_as_lost` |
 
 ### トランザクション（`tests/test_transactions.py`）
 
@@ -110,7 +119,10 @@
 | 同時に書いた行がすべて残る | `test_concurrent_writers_all_persist` |
 | サービス経由の書き込みは直列化される | `test_service_level_writes_are_serialised` |
 | 重複で失敗しても先に入れた行は残る | `test_a_duplicate_failure_leaves_earlier_rows_intact` |
-| SQLite の境界は開始時に書き込みロックを取り、別の接続の書き込みを待たせる | `test_sqlite_boundary_takes_the_write_lock_at_the_start` |
+| SQLite の境界は開始時に書き込みロックを取り、別の接続の書き込みを待たせる。待ちきれなかった側には共通の BusyError が届く | `test_sqlite_boundary_takes_the_write_lock_at_the_start` |
+| COMMIT が失敗しても深さが戻り、書き込みロックが解放される | `test_a_failed_commit_resets_the_depth_and_releases_the_lock` |
+| COMMIT の失敗のあとも、次の境界は正しく巻き戻り・確定する | `test_the_next_boundary_still_rolls_back_after_a_failed_commit` |
+| ドライバが巻き戻し済みの COMMIT 失敗でも、元の例外を隠さない | `test_a_commit_the_driver_already_rolled_back_does_not_mask_the_error` |
 
 ### 画面（`tests/test_app_behaviour.py`、`tests/test_app_smoke.py`）
 
@@ -122,12 +134,17 @@
 | 別の場所の更新を古い表示で戻さない | `test_rendering_does_not_revert_an_out_of_band_update`、`test_a_stale_tab_cannot_overwrite_a_newer_change` |
 | 古い表示への入力は反映せず、そのことを知らせる。更新されていない行の編集は通す。最新の表示からの保存では警告しない | `test_a_stale_tab_is_told_that_its_edit_was_not_saved`、`test_an_edit_on_an_untouched_row_is_still_saved_from_a_stale_tab`、`test_saving_a_fresh_tab_does_not_warn` |
 | 入力エラーは例外ではなく文面で出る | `test_duplicate_company_name_shows_a_message_not_a_traceback`、`test_blank_company_name_is_reported` |
+| 選択肢にない古い値があっても画面は落ちず、黙って書き換えず、更新時に選び直すよう伝える | `TestValuesOutsideTheChoices` |
+| 選考ステップの保存が途中で失敗しても、文面で伝え、どの行も書かれない | `test_a_failed_step_save_shows_a_message_and_writes_nothing` |
 | ES管理の絞り込みが効く（判定はサービス層の検索） | `test_keyword_narrows_the_list` |
+| ES 本文でも古いタブが新しい変更を潰さず、そのことを知らせる。最新の表示からの保存は通る | `test_a_stale_tab_cannot_overwrite_a_newer_answer`、`test_saving_from_a_fresh_tab_still_works` |
 | 利用者が入れた文字列を、ラベルや通知で Markdown として解釈させない | `TestUserTextIsNotMarkdown` |
 | メニューの項目名とページの題が揃い、表の見出しに内部の列名が出ない | `test_review_page_title_matches_the_menu`、`test_funnel_table_has_no_english_heading` |
 | 削除は確認しないと押せない。確認すれば消える | `test_delete_is_disabled_until_confirmed`、`test_delete_works_once_confirmed` |
+| 選考ステップと所見の削除も、何が失われるかを見せた上の「削除する」だけで行える | `test_step_delete_is_behind_a_confirmation`、`test_review_delete_is_behind_a_confirmation` |
 | CSV の取り込みは、要約を出しただけでは書かず、押されたときに要約どおりに書く。読めないファイルは文面で伝える。要約のあとで登録内容が変わっていたら書かずに知らせる | `test_summary_is_shown_and_nothing_is_written_until_confirmed`、`test_confirming_writes_what_the_summary_showed`、`test_unreadable_file_shows_a_message_not_a_traceback`、`test_a_summary_that_went_stale_is_not_applied` |
 | セッションごとに接続を持ち、別接続から書き込みが見える | `test_each_session_opens_its_own_connection`、`test_write_through_the_app_is_visible_to_another_connection` |
+| 死んだ接続は次の再描画で張り直す | `test_a_dead_connection_is_reopened_on_the_next_run` |
 | 保存先の表示にパスワードや絶対パスが出ない | `TestTargetIsNotLeaked` |
 
 ### 企業研究リンク・書き出し（`tests/test_research_and_export.py`）
@@ -152,10 +169,12 @@
 | 設問と提出先は1行に収まり、改行で見出しや指示を差し込めない | `test_question_and_company_cannot_start_a_new_line` |
 | 補足は与えたときだけ入る。複数行の観点で表が崩れない。空入力は拒否。事実の捏造を禁じる指示が入る | `test_note_is_included_only_when_given`、`test_multiline_criteria_do_not_break_the_table`、`test_empty_input_is_rejected`、`test_system_prompt_forbids_inventing_facts` |
 | 既定の実行先は依頼文をそのまま返し、通信しないと宣言する | `test_returns_the_prompt_unchanged`、`test_declares_that_it_does_not_send_data` |
-| API の実行先は送信内容・拒否・空応答・依存やキーの欠如を扱える | `TestAnthropicProvider`、`TestExtractText` |
+| API の実行先は送信内容・拒否・空応答・依存やキーの欠如を扱える。途中で切れた所見は保存しない。使用量を結果に載せる | `TestAnthropicProvider`、`TestExtractText`、`TestExtractUsage` |
+| SDK の例外は状態コードと理由を添えた文面になる。SDK の内部の不具合を「SDK が古い」と誤案内しない | `TestErrorTranslation` |
 | モデルは環境変数で差し替えられ、未設定・空白なら既定に戻る。明示指定が環境変数より優先される | `test_model_defaults_when_the_environment_is_unset`、`test_model_can_be_overridden_by_the_environment`、`test_a_blank_environment_value_falls_back_to_the_default`、`test_an_explicit_model_wins_over_the_environment`、`test_the_environment_is_read_at_call_time_not_at_import` |
 | 実行先の一覧は通信しないものが先頭、API はキーがあるときだけ | `test_offline_provider_is_always_first`、`test_api_provider_appears_when_the_key_is_set` |
 | 所見は依頼文と本文の写しごと保存され、後の書き換えを検出する | `test_run_saves_the_review`、`test_prompt_is_stored_with_the_result`、`test_snapshot_detects_a_later_edit` |
+| 実行にかかったトークン数が所見と一緒に残る。通信しない実行先では空 | `test_usage_is_stored_with_the_review`、`test_usage_is_absent_for_the_offline_provider` |
 | 履歴は新しい順。未保存の回答は点検できない | `test_history_is_newest_first`、`test_unsaved_answer_is_rejected` |
 | 業界は企業から引き、上書きもできる | `test_industry_comes_from_the_company`、`test_industry_can_be_overridden`、`test_answer_without_a_company_has_no_industry` |
 | 既定の実行先では通信しない。回答を消すと所見も消える。所見は1件ずつ消せる | `test_default_provider_does_not_send_data`、`test_review_is_removed_with_its_answer`、`test_delete_removes_one_review` |

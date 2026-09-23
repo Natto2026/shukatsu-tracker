@@ -13,7 +13,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from shukatsu_tracker import db
-from shukatsu_tracker.db import ConnectionFailedError, DatabaseError
+from shukatsu_tracker.db import ConnectionFailedError, ConnectionLostError, DatabaseError
 
 APP_PATH = str(Path(__file__).parent.parent / "app.py")
 
@@ -47,12 +47,29 @@ def test_unreachable_postgres_is_translated_without_leaking_the_target():
     assert "127.0.0.1" not in message
 
 
+def test_ping_tells_a_live_connection_from_a_closed_one(conn):
+    assert conn.ping() is True
+    conn.close()
+    assert conn.ping() is False
+
+
+def test_operating_on_a_closed_connection_is_reported_as_lost(conn):
+    """切れた接続への操作は、ドライバの例外ではなく共通の型で上がること。
+
+    画面はこの型を見て接続を手放し、次の再描画で張り直す。
+    """
+    conn.close()
+    with pytest.raises(ConnectionLostError):
+        conn.fetchall("SELECT id FROM companies")
+
+
 def test_sqlite_file_that_cannot_be_opened_is_translated(tmp_path):
     """保存先にディレクトリを指した場合。sqlite3 の例外を外に出さない。"""
     with pytest.raises(ConnectionFailedError, match="SQLite のファイルを開けませんでした"):
         db.connect(tmp_path)
 
 
+@pytest.mark.ui
 @pytest.mark.parametrize(
     "target",
     [

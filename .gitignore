@@ -1,12 +1,26 @@
 # 個人の就活データは絶対にコミットしない
 data/
 *.db
+# SQLite の WAL / ジャーナル。data/ の外に保存先を指定した場合も、本体と一緒に除外する
+*.db-wal
+*.db-shm
+*.db-journal
+
+# 認証情報。API キーは環境変数で渡す方針だが、.env や secrets.toml に書いた場合も混入させない
+.env
+.env.*
+.streamlit/secrets.toml
 
 __pycache__/
 *.pyc
 *.egg-info/
 .venv/
+venv/
+build/
+dist/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
+coverage.xml
+htmlcov/

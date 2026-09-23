@@ -15,7 +15,7 @@ from typing import Any
 
 from ..models import Company, EsAnswer, Review, Step, StepView
 from .database import Database
-from .dialects import TODAY
+from .dialects import FOR_UPDATE, TODAY
 
 # 志望度は文字列順だと S が末尾に来るため、意味の順（S→A→B→C）を明示する
 _PRIORITY_ORDER = "CASE priority WHEN 'S' THEN 0 WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 ELSE 4 END"
@@ -104,6 +104,15 @@ class CompanyRepository(_Table):
         row = self._db.fetchone("SELECT * FROM companies WHERE id = ?", (company_id,))
         return None if row is None else self._to_model(row)
 
+    def lock(self, company_id: int) -> bool:
+        """企業の行を境界の終わりまでロックする。行がなければ False。
+
+        同じ企業への同時の追加を直列化するために使う（PostgreSQL の既定の分離レベルでは
+        境界を開いても他の接続を待たせないため）。境界の外で呼んでも意味がない。
+        """
+        row = self._db.fetchone(f"SELECT id FROM companies WHERE id = ? {FOR_UPDATE}", (company_id,))
+        return row is not None
+
     def list_all(self) -> list[Company]:
         rows = self._db.fetchall(f"SELECT * FROM companies ORDER BY {_PRIORITY_ORDER}, name")
         return [self._to_model(row) for row in rows]
@@ -165,6 +174,18 @@ class StepRepository(_Table):
             (company_id,),
         )
         return [self._to_model(row) for row in rows]
+
+    def next_sort_order(self, company_id: int) -> int:
+        """末尾に足すときの並び順。件数ではなく最大値の次にする。
+
+        件数だと、途中のステップを消したあとの追加が既存の並び順と衝突する
+        （0..5 から 2 を消して足すと 5 が2つになる）。
+        """
+        row = self._db.fetchone(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM steps WHERE company_id = ?",
+            (company_id,),
+        )
+        return int(row["next_order"])
 
     def list_views(self) -> list[StepView]:
         """全ステップに企業情報を結合して返す。集計の唯一の入力。"""
@@ -238,6 +259,8 @@ class ReviewRepository(_Table):
             "prompt",
             "result",
             "answer_snapshot",
+            "input_tokens",
+            "output_tokens",
         }
     )
 
@@ -252,6 +275,8 @@ class ReviewRepository(_Table):
             prompt=row["prompt"],
             result=row["result"],
             answer_snapshot=row["answer_snapshot"],
+            input_tokens=row["input_tokens"],
+            output_tokens=row["output_tokens"],
             created_at=row["created_at"],
         )
 
@@ -265,6 +290,8 @@ class ReviewRepository(_Table):
                 "prompt": review.prompt,
                 "result": review.result,
                 "answer_snapshot": review.answer_snapshot,
+                "input_tokens": review.input_tokens,
+                "output_tokens": review.output_tokens,
             }
         )
 

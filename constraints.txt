@@ -1,0 +1,17 @@
+# 検証済みの版に固定するための制約。pyproject.toml の下限はそのまま、CI と手元の
+# `pip install -e ".[dev]" -c constraints.txt` でこの版が入る。
+#
+# ロックファイルを置かないと、CI は毎回「最新」を取り、上流のメジャー更新（ruff の新規則、
+# pandas の挙動変更、streamlit の引数の廃止）でリポジトリ側の変更なしに赤くなる。
+#
+# 上げるときは、手元で ruff check / ruff format --check / mypy / pytest をすべて通してから
+# ここの値を書き換える。
+streamlit==1.60.0
+pandas==3.0.3
+altair==6.2.2
+pytest==9.0.3
+pytest-cov==7.1.0
+ruff==0.16.1
+mypy==2.3.1
+psycopg==3.3.5
+psycopg-binary==3.3.5

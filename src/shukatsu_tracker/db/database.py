@@ -37,9 +37,17 @@ class Database:
         rendered = self.dialect.render(sql)
         if self._trace is not None:
             self._trace.append(sql)
+        with self.lock:
+            return self._run(rendered, tuple(params or ()))
+
+    def _run(self, sql: str, params: tuple[Any, ...] = ()) -> Any:
+        """ドライバに渡し、固有の例外を共通の型に翻訳する。
+
+        問い合わせだけでなく BEGIN / COMMIT / ROLLBACK もここを通す。
+        `BEGIN IMMEDIATE` のロック待ち超過はここで起きるため。
+        """
         try:
-            with self.lock:
-                return self._raw.execute(rendered, tuple(params or ()))
+            return self._raw.execute(sql, params)
         except Exception as error:
             translated = self.dialect.translate_error(error)
             if translated is not None:
@@ -75,7 +83,7 @@ class Database:
         return self._depth
 
     def begin(self) -> None:
-        self._raw.execute(self.dialect.begin_sql)
+        self._run(self.dialect.begin_sql)
         self._depth = 1
 
     def enter(self) -> None:
@@ -85,12 +93,18 @@ class Database:
         self._depth = max(0, self._depth - 1)
 
     def commit(self) -> None:
-        self._raw.execute("COMMIT")
-        self._depth = 0
+        # 失敗しても深さは戻す。戻さないと、次の境界が「入れ子」と誤認されて
+        # BEGIN も ROLLBACK も発行されず、以後の書き込みが宙に浮いたままになる。
+        try:
+            self._run("COMMIT")
+        finally:
+            self._depth = 0
 
     def rollback(self) -> None:
-        self._raw.execute("ROLLBACK")
-        self._depth = 0
+        try:
+            self._run("ROLLBACK")
+        finally:
+            self._depth = 0
 
     # --- その他 -------------------------------------------------------
 
@@ -103,6 +117,15 @@ class Database:
             yield collected
         finally:
             self._trace = previous
+
+    def ping(self) -> bool:
+        """接続がまだ使えるか。サーバーの再起動や切断で死んだ接続を見分ける。"""
+        try:
+            with self.lock:
+                self._raw.execute("SELECT 1")
+        except Exception:
+            return False
+        return True
 
     def close(self) -> None:
         self._raw.close()

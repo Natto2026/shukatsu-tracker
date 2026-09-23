@@ -13,8 +13,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
+from contextlib import suppress
 from datetime import date
 from pathlib import Path
 
@@ -23,16 +25,18 @@ import pandas as pd
 import streamlit as st
 
 from shukatsu_tracker import ai_export, analytics, constants, db, research
-from shukatsu_tracker.db import DatabaseError, DuplicateKeyError
+from shukatsu_tracker.db import ConnectionLostError, DatabaseError, DuplicateKeyError
 from shukatsu_tracker.models import Company, EsAnswer
 from shukatsu_tracker.review import ReviewError
 from shukatsu_tracker.review.providers import available_providers
 from shukatsu_tracker.services import (
+    UNSET,
     CsvFormatError,
     CsvImportService,
     EsService,
     ReviewService,
     SelectionService,
+    StepChange,
     csv_import,
 )
 
@@ -49,15 +53,42 @@ def as_text(value: str | None) -> str:
     return "" if not value else _MARKDOWN_SPECIALS.sub(r"\\\1", value)
 
 
+def with_saved(options: list[str], value: str) -> tuple[list[str], int]:
+    """選択肢と、保存済みの値の位置。
+
+    選択肢にない値（定数を変える前に保存した古いデータ）は末尾に足して表示する。
+    `list.index` で落とすと、その企業を選んだ瞬間に画面全体が例外になって編集も
+    削除もできなくなる。先頭に倒すと、保存で黙って書き換わる。
+    """
+    if value in options:
+        return options, options.index(value)
+    return [*options, value], len(options)
+
+
+def saved_token(text: str) -> str:
+    """保存済みの本文を入力欄のキーに含めるための短い識別子。
+
+    本文そのものをキーにすると長すぎるため、ダイジェストにする。
+    """
+    return hashlib.blake2s(text.encode("utf-8"), digest_size=8).hexdigest()
+
+
 def get_db():
     """接続をブラウザのセッションごとに1つ持つ。
 
     全セッションで1つの接続を共有すると、あるセッションの失敗が別の
     セッションの確定済みの書き込みを巻き戻すため。
     """
-    if "db" not in st.session_state:
-        st.session_state.db = db.connect(DB_TARGET)
-    return st.session_state.db
+    database = st.session_state.get("db")
+    if database is not None and not database.ping():
+        # サーバーの再起動などで接続が死んでいる。持ち続けると、以後の操作が
+        # すべて失敗したままになるので、閉じて作り直す。
+        with suppress(Exception):
+            database.close()
+        database = None
+    if database is None:
+        database = st.session_state.db = db.connect(DB_TARGET)
+    return database
 
 
 def flash(message: str, kind: str = "success") -> None:
@@ -76,6 +107,10 @@ def run_write(action, success: str | None = None) -> bool:
         action()
     except DuplicateKeyError:
         st.error("同じ名前がすでに登録されています。別の名前にしてください。")
+    except ConnectionLostError as error:
+        # 次の再描画で接続を張り直せるように、死んだ接続は手放す
+        st.session_state.pop("db", None)
+        st.error(f"保存できませんでした: {error}")
     except DatabaseError as error:
         st.error(f"保存できませんでした: {error}")
     except ValueError as error:
@@ -252,10 +287,11 @@ elif page == "企業管理":
                 format="YYYY-MM-DD",
                 label_visibility="collapsed",
             )
+            result_options, result_index = with_saved(constants.STEP_RESULTS, step.result)
             new_result = c3.selectbox(
                 "結果",
-                constants.STEP_RESULTS,
-                index=constants.STEP_RESULTS.index(step.result),
+                result_options,
+                index=result_index,
                 key=f"rs:{token}",
                 label_visibility="collapsed",
             )
@@ -268,30 +304,34 @@ elif page == "企業管理":
             outdated = sum(
                 1 for step_id, shown in previously_shown.items() if now_shown.get(step_id) != shown
             )
-            changed = 0
+            changes: list[StepChange] = []
             for step_id, new_deadline, new_result, old_deadline, old_result in edited:
-                fields: dict[str, object] = {}
                 rendered = analytics.parse_date(old_deadline)
                 # 表示していた値と違うものだけを書く。読めない締切に
                 # 触っていない場合は、空欄に見えていても書き換えない。
-                if new_deadline != rendered:
-                    fields["deadline"] = new_deadline.isoformat() if new_deadline else None
-                if new_result != old_result:
-                    fields["result"] = new_result
-                if fields:
-                    selection.update_step(step_id, **fields)  # type: ignore[arg-type]
-                    changed += 1
-            if outdated:
-                flash(
-                    f"{outdated} 件は表示後に他の場所で更新されたため、その行への入力は反映していません。"
-                    "最新の値を表示しています。",
-                    "warning",
+                deadline_change = (
+                    (new_deadline.isoformat() if new_deadline else None)
+                    if new_deadline != rendered
+                    else UNSET
                 )
-            if changed:
-                flash(f"{changed} 件を保存しました。", "info")
-            elif not outdated:
-                flash("変更はありませんでした。", "info")
-            st.rerun()
+                result_change = new_result if new_result != old_result else UNSET
+                if deadline_change is not UNSET or result_change is not UNSET:
+                    changes.append(StepChange(step_id, deadline=deadline_change, result=result_change))
+            # 何行あっても1つの境界で書く。途中で失敗したら何も残らず、失敗の文面は
+            # run_write が出す。再描画すると消えるので、失敗したときは止まる。
+            saved = not changes or run_write(lambda: selection.update_steps(changes))
+            if saved:
+                if outdated:
+                    flash(
+                        f"{outdated} 件は表示後に他の場所で更新されたため、その行への入力は反映していません。"
+                        "最新の値を表示しています。",
+                        "warning",
+                    )
+                if changes:
+                    flash(f"{len(changes)} 件を保存しました。", "info")
+                elif not outdated:
+                    flash("変更はありませんでした。", "info")
+                st.rerun()
 
     with st.form("add_step", clear_on_submit=True):
         c1, c2 = st.columns([3, 1])
@@ -309,28 +349,27 @@ elif page == "企業管理":
         for step in steps:
             c1, c2 = st.columns([4, 1])
             c1.write(as_text(step.name))
-            if c2.button("削除", key=f"delstep{step.id}") and run_write(
-                lambda sid=step.id: selection.delete_step(sid or -1),
-                success="ステップを削除しました。",
-            ):
-                st.rerun()
+            # 1クリックで消さない。回答の削除と同じく、何が失われるかを見せてから押させる
+            with c2.popover("削除"):
+                st.warning(f"「{as_text(step.name)}」を消します。締切・結果・メモも消え、元に戻せません。")
+                if st.button("削除する", key=f"delstep{step.id}", type="secondary") and run_write(
+                    lambda sid=step.id: selection.delete_step(sid or -1),
+                    success="ステップを削除しました。",
+                ):
+                    st.rerun()
 
     with st.expander("企業情報の編集"), st.form("edit_company"):
         e_name = st.text_input("企業名", value=selected.name)
         c1, c2, c3 = st.columns(3)
-        e_industry = c1.selectbox(
-            "業界", constants.INDUSTRIES, index=constants.INDUSTRIES.index(selected.industry)
-        )
-        e_priority = c2.selectbox(
-            "志望度", constants.PRIORITIES, index=constants.PRIORITIES.index(selected.priority)
-        )
-        e_route = c3.selectbox("応募経路", constants.ROUTES, index=constants.ROUTES.index(selected.route))
+        industry_options, industry_index = with_saved(constants.INDUSTRIES, selected.industry)
+        e_industry = c1.selectbox("業界", industry_options, index=industry_index)
+        priority_options, priority_index = with_saved(constants.PRIORITIES, selected.priority)
+        e_priority = c2.selectbox("志望度", priority_options, index=priority_index)
+        route_options, route_index = with_saved(constants.ROUTES, selected.route)
+        e_route = c3.selectbox("応募経路", route_options, index=route_index)
         c4, c5 = st.columns(2)
-        e_test = c4.selectbox(
-            "適性検査",
-            constants.TEST_TYPES,
-            index=constants.TEST_TYPES.index(selected.test_type),
-        )
+        test_options, test_index = with_saved(constants.TEST_TYPES, selected.test_type)
+        e_test = c4.selectbox("適性検査", test_options, index=test_index)
         e_email = c5.text_input("マイページ登録メール", value=selected.login_email)
         e_url = st.text_input("マイページURL", value=selected.mypage_url)
         e_memo = st.text_area("メモ", value=selected.memo, height=68)
@@ -361,7 +400,9 @@ elif page == "企業管理":
         confirmed = st.checkbox(
             f"「{as_text(selected.name)}」を削除することを理解しました", key=f"confirm_del{company_id}"
         )
-        if st.button("削除する", disabled=not confirmed, type="secondary") and run_write(
+        if st.button(
+            "削除する", key="delete_company", disabled=not confirmed, type="secondary"
+        ) and run_write(
             lambda: selection.delete_company(company_id),
             success=f"「{as_text(selected.name)}」を削除しました。",
         ):
@@ -413,17 +454,27 @@ elif page == "ES管理":
     shown = es.search(categories=filter_categories, keyword=keyword)
     st.caption(f"{len(shown)} / {len(all_answers)} 件")
 
+    # 前回この画面に出した本文を控えておく（選考ステップと同じ仕組み）。保存を押した
+    # 再実行では入力欄が最新の本文で作り直されるため、古い表示への入力は届かない。
+    # 届かなかったことを知らせるには、入力欄とは別に「何を見せていたか」が要る。
+    previously_shown_text: dict[int, str] = st.session_state.get("es_shown", {})
+    st.session_state["es_shown"] = {a.id or -1: a.answer for a in shown}
+
     for answer in shown:
+        answer_id = answer.id or -1
         # expander の見出しは Markdown として描画される
         title = (
             f"[{answer.category}] {as_text(answer.question[:40])}（{as_text(answer.company_name) or '汎用'}）"
         )
         with st.expander(title):
+            # 保存済みの本文をキーに含める。別のタブや端末で更新されたとき、古い入力欄の
+            # 値が残って上書きするのを防ぐため。更新日は日付単位なので、同じ日のうちの
+            # 更新を見分けられず、キーに使えない。
             new_text = st.text_area(
                 "回答",
                 value=answer.answer,
                 height=200,
-                key=f"es:{answer.id}:{answer.updated_at}",
+                key=f"es:{answer_id}:{saved_token(answer.answer)}",
             )
             check = es.length_check(new_text, answer.char_limit)
             if check.limit is None:
@@ -435,19 +486,27 @@ elif page == "ES管理":
             else:
                 st.caption(f"文字数: {check.length} / {check.limit}")
 
-            if st.button("保存", key=f"save{answer.id}"):
-                if new_text == answer.answer:
+            if st.button("保存", key=f"save{answer_id}"):
+                # 押した時点の表示と、いま読み直した本文を突き合わせる。ずれていれば
+                # 入力欄は作り直されており、new_text には最新の本文しか入っていない。
+                if previously_shown_text.get(answer_id, answer.answer) != answer.answer:
+                    st.warning(
+                        "表示後に他の場所で更新されたため、この入力は反映していません。最新の本文を表示しています。"
+                    )
+                elif new_text == answer.answer:
                     st.info("変更はありませんでした。")
                 elif run_write(
-                    lambda aid=answer.id, text=new_text: es.update_text(aid or -1, text),
+                    lambda aid=answer_id, text=new_text, seen=answer.answer: es.update_text(
+                        aid, text, expected=seen
+                    ),
                     success="回答を保存しました。",
                 ):
                     st.rerun()
 
             with st.popover("削除"):
                 st.warning("この回答と、ひもづく所見の履歴もすべて消えます。元に戻せません。")
-                if st.button("削除する", key=f"rm{answer.id}", type="secondary") and run_write(
-                    lambda aid=answer.id: es.delete(aid or -1),
+                if st.button("削除する", key=f"rm{answer_id}", type="secondary") and run_write(
+                    lambda aid=answer_id: es.delete(aid),
                     success="回答を削除しました。",
                 ):
                     st.rerun()
@@ -542,7 +601,9 @@ elif page == "添削":
         for review in history:
             label = f"{review.created_at}  {review.provider}"
             if review.model:
-                label += f"（{review.model}）"
+                label += f"（{as_text(review.model)}）"
+            if review.input_tokens is not None or review.output_tokens is not None:
+                label += f"  入力 {review.input_tokens or 0:,} / 出力 {review.output_tokens or 0:,} トークン"
             if not review.applies_to(target.answer):
                 label += "  ※この所見のあとに本文が変わっています"
             with st.expander(label):
@@ -554,11 +615,13 @@ elif page == "添削":
                     file_name=f"review_{review.id}.md",
                     key=f"dl_review_{review.id}",
                 )
-                if c1.button("削除", key=f"rm_review_{review.id}") and run_write(
-                    lambda rid=review.id: reviewer.delete(rid or -1),
-                    success="所見を削除しました。",
-                ):
-                    st.rerun()
+                with c1.popover("削除"):
+                    st.warning("この所見を消します。元に戻せません。")
+                    if st.button("削除する", key=f"rm_review_{review.id}", type="secondary") and run_write(
+                        lambda rid=review.id: reviewer.delete(rid or -1),
+                        success="所見を削除しました。",
+                    ):
+                        st.rerun()
 
 
 # --- 分析 ----------------------------------------------------------------
