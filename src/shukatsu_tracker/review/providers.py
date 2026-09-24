@@ -16,8 +16,10 @@ from .prompt import ReviewRequest
 
 DEFAULT_MODEL = "claude-opus-5"
 DEFAULT_MAX_TOKENS = 16000
-# 画面を止めたまま待たせないため、既定（10分×再試行）より短く切る
-DEFAULT_TIMEOUT_SECONDS = 120.0
+# 画面を止めたまま待たせないため、既定（10分×再試行）より短く切る。
+# ただし出力の上限まで書くと数分かかり、時間切れは再試行で生成をやり直した分も課金されるので、
+# 上限まで書いてもおおむね収まる長さにする
+DEFAULT_TIMEOUT_SECONDS = 300.0
 DEFAULT_MAX_RETRIES = 1
 API_KEY_ENV = "ANTHROPIC_API_KEY"
 MODEL_ENV = "SHUKATSU_REVIEW_MODEL"

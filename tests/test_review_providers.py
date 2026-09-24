@@ -230,7 +230,7 @@ class TestErrorTranslation:
         assert "2行目" not in str(caught.value)
 
     def test_timeout_reports_the_limit(self, sdk):
-        with pytest.raises(ReviewError, match="120 秒以内"):
+        with pytest.raises(ReviewError, match="300 秒以内"):
             self._review(sdk.APITimeoutError("timed out"))
 
     def test_connection_failure_is_explained(self, sdk):
