@@ -11,6 +11,10 @@ data/
 .env.*
 .streamlit/secrets.toml
 
+# 運用手順（docs/operations.md）のバックアップの置き場所。PostgreSQL のダンプ（.sql）は
+# *.db の除外にかからないため、フォルダごと除外する
+backup/
+
 __pycache__/
 *.pyc
 *.egg-info/

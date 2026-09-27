@@ -44,8 +44,10 @@ SHUKATSU_DB=postgresql://shukatsu:devpass@127.0.0.1:5432/shukatsu streamlit run 
 ### SQLite
 
 アプリを止めてから、`data/shukatsu.db` を丸ごとコピーする。1ファイルなのでこれで完結する。
+置き場所の `backup/` は .gitignore で除外してある（中身は選考データそのものなので、コミットしない）。
 
 ```bash
+mkdir -p backup
 cp data/shukatsu.db backup/shukatsu-$(date +%Y%m%d).db
 ```
 
@@ -54,6 +56,7 @@ cp data/shukatsu.db backup/shukatsu-$(date +%Y%m%d).db
 ### PostgreSQL
 
 ```bash
+mkdir -p backup
 pg_dump  -h 127.0.0.1 -U shukatsu shukatsu > backup/shukatsu-$(date +%Y%m%d).sql   # 取得
 psql     -h 127.0.0.1 -U shukatsu shukatsu < backup/shukatsu-YYYYMMDD.sql          # 復旧
 ```
