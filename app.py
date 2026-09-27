@@ -157,11 +157,12 @@ def run_write(action, success: str | None = None) -> bool:
     except ConnectionLostError as error:
         # 次の再描画で接続を張り直せるように、死んだ接続は手放す
         st.session_state.pop("db", None)
-        st.error(f"保存できませんでした: {error}")
+        st.error(f"保存できませんでした: {as_text(str(error))}")
     except DatabaseError as error:
-        st.error(f"保存できませんでした: {error}")
+        st.error(f"保存できませんでした: {as_text(str(error))}")
     except ValueError as error:
-        st.error(str(error))
+        # 文面には利用者の入れた値（企業名・古い選択肢の値など）が入るので、エスケープする
+        st.error(as_text(str(error)))
     else:
         if success:
             flash(success)
@@ -299,6 +300,11 @@ elif page == "企業管理":
     # 選択は企業の ID で持つ。企業そのものを選択肢にすると、表示文字列（企業名・志望度）を
     # 更新したときに別の欄とみなされ、先頭の企業に戻ってしまう
     company_by_id = {c.id or -1: c for c in companies}
+    # キーを付けた選択欄の状態は、描画されなかった実行（別のページを開いている間）に
+    # Streamlit が捨てる。選んでいた企業を別のキーに控え、戻ってきたときに復元する
+    kept = st.session_state.get("company_kept")
+    if "company_selected" not in st.session_state and kept in company_by_id:
+        st.session_state["company_selected"] = kept
     company_id = st.selectbox(
         "企業を選択",
         list(company_by_id),
@@ -306,6 +312,7 @@ elif page == "企業管理":
         key="company_selected",
     )
     selected = company_by_id[company_id]
+    st.session_state["company_kept"] = company_id
     # 一覧と状況の両方をこの1回の問い合わせで賄う
     steps = selection.steps_by_company().get(company_id, [])
     status = analytics.company_status(steps)

@@ -379,6 +379,23 @@ class TestUserTextIsNotMarkdown:
         assert ":material/home:" not in memo
         assert "&#58;material/home&#58;" in memo
 
+    def test_a_value_in_an_error_message_is_escaped(self, app_db):
+        """入力エラーの文面に入る利用者の値（古い選択肢の値など）も解釈させない。"""
+        database = open_db(app_db)
+        try:
+            company_id = SelectionService(database).add_company(
+                Company(name="テスト株式会社"), with_default_steps=False
+            )
+            with transaction(database):
+                CompanyRepository(database).update(company_id, industry="旧業界*x*")
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+        [b for b in at.button if b.label == "更新"][0].click().run()
+        errors = [e.value for e in at.error if "旧業界" in e.value]
+        assert errors, "エラーの文面が見つからない"
+        assert r"旧業界\*x\*" in errors[0]
+
     def test_memo_lines_cannot_become_a_heading_or_a_code_block(self, app_db):
         """メモの改行は残すが、次の行の === で見出しに、4字下げでコードブロックにならないこと。"""
         database = open_db(app_db)
@@ -744,6 +761,22 @@ class TestCompanySelection:
         assert not at.exception, at.exception
         assert at.selectbox(key="company_selected").value == b_id
         assert [m.value for m in at.markdown if m.value.startswith("### ")][0].startswith("### B社")
+
+    def test_the_chosen_company_survives_a_visit_to_another_page(self, app_db):
+        """別のページを見て戻っても、選んでいた企業のままであること。"""
+        database = open_db(app_db)
+        try:
+            selection = SelectionService(database)
+            selection.add_company(Company(name="A社", priority="A"), with_default_steps=False)
+            c_id = selection.add_company(Company(name="C社", priority="C"), with_default_steps=False)
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+        at.selectbox(key="company_selected").set_value(c_id).run()
+        at.sidebar.radio[0].set_value("ダッシュボード").run()
+        at.sidebar.radio[0].set_value("企業管理").run()
+        assert not at.exception, at.exception
+        assert at.selectbox(key="company_selected").value == c_id
 
     def test_a_company_named_like_the_generic_choice_does_not_hide_it(self, app_db):
         """「（汎用）」という名前の企業があっても、汎用の回答を登録できること。"""
