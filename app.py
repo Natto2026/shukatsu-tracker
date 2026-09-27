@@ -257,8 +257,16 @@ elif page == "企業管理":
     if not companies:
         st.stop()
 
-    selected = st.selectbox("企業を選択", companies, format_func=lambda c: f"{c.name}（{c.priority}）")
-    company_id = selected.id or -1
+    # 選択は企業の ID で持つ。企業そのものを選択肢にすると、表示文字列（企業名・志望度）を
+    # 更新したときに別の欄とみなされ、先頭の企業に戻ってしまう
+    company_by_id = {c.id or -1: c for c in companies}
+    company_id = st.selectbox(
+        "企業を選択",
+        list(company_by_id),
+        format_func=lambda cid: f"{company_by_id[cid].name}（{company_by_id[cid].priority}）",
+        key="company_selected",
+    )
+    selected = company_by_id[company_id]
     # 一覧と状況の両方をこの1回の問い合わせで賄う
     steps = selection.steps_by_company().get(company_id, [])
     status = analytics.company_status(steps)
@@ -442,13 +450,15 @@ elif page == "ES管理":
     st.caption("一度書いた回答をカテゴリで整理し、文字数制限と照らして管理します。")
 
     companies = selection.companies()
-    company_options: dict[str, int | None] = {"（汎用）": None}
-    company_options.update({c.name: c.id for c in companies})
+    # 選択肢は企業の ID（汎用は None）。名前を鍵にすると、「（汎用）」という名前の企業や
+    # 同名の企業で選択肢が上書きされる
+    company_names: dict[int | None, str] = {None: "（汎用）"}
+    company_names.update({c.id: c.name for c in companies})
 
     with st.expander("設問・回答を追加"), st.form(form_key("add_es")):
         c1, c2, c3 = st.columns([2, 2, 1])
         category = c1.selectbox("カテゴリ", constants.ES_CATEGORIES)
-        company_name = c2.selectbox("企業", list(company_options))
+        target_company = c2.selectbox("企業", list(company_names), format_func=company_names.__getitem__)
         char_limit = c3.number_input("文字数制限", min_value=0, value=400, step=50)
         question = st.text_input("設問文")
         answer_text = st.text_area("回答", height=200)
@@ -460,7 +470,7 @@ elif page == "ES管理":
                     EsAnswer(
                         question=question,
                         category=category,
-                        company_id=company_options[company_name],
+                        company_id=target_company,
                         char_limit=int(char_limit) or None,
                         answer=answer_text,
                     )

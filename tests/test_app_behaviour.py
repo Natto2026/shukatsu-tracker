@@ -673,6 +673,47 @@ class TestFormsKeepInputOnError:
         assert [t for t in at.text_area if t.label == "メモ"][0].value == "残したいメモ"
 
 
+class TestCompanySelection:
+    def test_updating_the_shown_company_keeps_it_selected(self, app_db):
+        """志望度や企業名を変えて更新しても、選択が先頭の企業に戻らないこと。"""
+        database = open_db(app_db)
+        try:
+            selection = SelectionService(database)
+            selection.add_company(Company(name="A社", priority="A"), with_default_steps=False)
+            b_id = selection.add_company(Company(name="B社", priority="B"), with_default_steps=False)
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+        at.selectbox(key="company_selected").set_value(b_id).run()
+
+        [s for s in at.selectbox if s.label == "志望度"][0].set_value("C").run()
+        [b for b in at.button if b.label == "更新"][0].click().run()
+        assert not at.exception, at.exception
+        assert at.selectbox(key="company_selected").value == b_id
+        assert [m.value for m in at.markdown if m.value.startswith("### ")][0].startswith("### B社")
+
+    def test_a_company_named_like_the_generic_choice_does_not_hide_it(self, app_db):
+        """「（汎用）」という名前の企業があっても、汎用の回答を登録できること。"""
+        database = open_db(app_db)
+        try:
+            SelectionService(database).add_company(Company(name="（汎用）"), with_default_steps=False)
+        finally:
+            database.close()
+        at = open_page(app_db, "ES管理")
+        company = [s for s in at.selectbox if s.label == "企業"][0]
+        assert len(company.options) == 2
+        [t for t in at.text_input if t.label == "設問文"][0].set_value("志望動機")
+        [b for b in at.button if b.label == "保存"][0].click().run()
+        assert not at.exception, at.exception
+
+        database = open_db(app_db)
+        try:
+            (answer,) = EsService(database).answers()
+        finally:
+            database.close()
+        assert answer.company_id is None
+
+
 class TestLabels:
     def test_review_page_title_matches_the_menu(self, app_db):
         """添削のページの題が、メニューの項目名とずれていないこと。"""
