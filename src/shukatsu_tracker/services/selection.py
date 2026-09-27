@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import unicodedata
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -39,6 +40,22 @@ _COMPANY_LABELS = {"industry": "業界", "priority": "志望度", "route": "応�
 _TRIMMED = ("name", "mypage_url", "login_email")
 
 
+# 名前に使わせない文字の種類。Cc は改行・タブなどの制御文字、Zl・Zp は行区切り・段落区切り
+# （U+2028・U+2029。多くの処理が改行とみなす）、Cf はゼロ幅文字や表示方向の制御（RLO）など
+_INVISIBLE_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
+
+
+def check_single_line(value: str, label: str) -> None:
+    """企業名・ステップ名に、改行や見えない文字がないことを確かめる。
+
+    一覧・見出し・書き出しの Markdown はどれも名前が1行であることを前提にしている。
+    改行が入ると見出しが割れ、2行目が別の見出しや指示として読まれてしまう。ゼロ幅文字は
+    見た目が同じ別の名前を作れるため（「ABC」と「ABC＋ゼロ幅空白」）、これも拒否する。
+    """
+    if any(unicodedata.category(char) in _INVISIBLE_CATEGORIES for char in value):
+        raise ValueError(f"{label}に改行・タブ・ゼロ幅文字などの見えない制御文字は使えません")
+
+
 def _validated_company_fields(fields: Mapping[str, object]) -> dict[str, Any]:
     """企業の列の値を検証し、整えて返す。選択肢にない値・空の企業名は ValueError。"""
     cleaned: dict[str, Any] = {}
@@ -47,6 +64,8 @@ def _validated_company_fields(fields: Mapping[str, object]) -> dict[str, Any]:
             value = value.strip()
         if key == "name" and not value:
             raise ValueError("企業名は必須です")
+        if key == "name" and isinstance(value, str):
+            check_single_line(value, "企業名")
         choices = _COMPANY_CHOICES.get(key)
         if choices is not None and value not in choices:
             raise ValueError(
@@ -112,13 +131,21 @@ class DashboardSummary:
 
     @property
     def overdue(self) -> list[Deadline]:
-        """期限を過ぎたもの。"""
-        return [deadline for deadline in self.deadlines if deadline.overdue]
+        """期限を過ぎたもの。選考が終わった企業に残っているものは含めない。"""
+        return [d for d in self.deadlines if d.overdue and not d.company_ended]
 
     @property
     def upcoming(self) -> list[Deadline]:
-        """これから期限を迎えるもの。期限超過は含めない。"""
-        return [deadline for deadline in self.deadlines if not deadline.overdue]
+        """これから期限を迎えるもの。期限超過と、選考が終わった企業に残っているものは含めない。"""
+        return [d for d in self.deadlines if not d.overdue and not d.company_ended]
+
+    @property
+    def left_behind(self) -> list[Deadline]:
+        """落選・辞退した企業に、選考中のまま残っている締切。
+
+        件数には数えないが、続いている選考かもしれないので消さずに別に見せる。
+        """
+        return [d for d in self.deadlines if d.company_ended]
 
 
 class SelectionService:
@@ -198,6 +225,7 @@ class SelectionService:
         label = name.strip()
         if not label:
             raise ValueError("ステップ名は必須です")
+        check_single_line(label, "ステップ名")
         checked_deadline = _validated_deadline(deadline)
         # 並び順を決める読み取りも境界の中で行う。外で読むと、読んでから書くまでの
         # 間に別の追加が割り込み、同じ並び順が2つできる。SQLite は境界の開始で

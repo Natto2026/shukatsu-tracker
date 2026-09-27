@@ -19,6 +19,9 @@ DECLINED = "辞退"
 
 _JUDGED = (PASSED, FAILED)
 
+# 通過率の数え方。画面と書き出しで同じ説明を出す
+PASS_RATE_UNIT = "ステップ単位の集計。1社で ES 通過・1次面接落選なら、通過1・落選1と数える"
+
 
 def parse_date(value: str | None) -> date | None:
     """ISO 形式の日付文字列を date にする。読めなければ None。"""
@@ -30,11 +33,25 @@ def parse_date(value: str | None) -> date | None:
         return None
 
 
+def ended_companies(steps: Iterable[StepView]) -> set[int]:
+    """落選・辞退で選考が終わった企業の ID。
+
+    終わった企業にも、後続のステップが「選考中」のまま残る（企業の追加時に標準の
+    ステップをまとめて登録するため）。それらは実際には進むことがないので、締切や
+    ファネルの「選考中」から外すときに使う。
+    """
+    return {step.company_id for step in steps if step.result in (FAILED, DECLINED)}
+
+
 def upcoming_deadlines(steps: Iterable[StepView], today: date, within_days: int = 7) -> list[Deadline]:
     """締切が within_days 日以内の未完了ステップを、締切が近い順に返す。
 
-    期限超過のものも含める（見落としこそ防ぎたいため）。
+    期限超過のものも含める（見落としこそ防ぎたいため）。選考が終わった企業の
+    残りのステップも除かず、`company_ended` の印を付けて返す。もう来ない締切か、
+    続いている選考（辞退したインターンのあとの本選考など）かは区別できないため。
     """
+    steps = list(steps)
+    ended = ended_companies(steps)
     found: list[Deadline] = []
     for step in steps:
         if step.result != IN_PROGRESS:
@@ -44,7 +61,7 @@ def upcoming_deadlines(steps: Iterable[StepView], today: date, within_days: int 
             continue
         days_left = (deadline - today).days
         if days_left <= within_days:
-            found.append(Deadline(step=step, days_left=days_left))
+            found.append(Deadline(step=step, days_left=days_left, company_ended=step.company_id in ended))
     return sorted(found, key=lambda d: d.days_left)
 
 
@@ -53,6 +70,8 @@ def pass_rate_by(steps: Iterable[StepView], attribute: str, step_name: str | Non
 
     step_name を指定するとそのステップだけを対象にする（例: "ES"）。
     分母は結果が確定したものだけで、選考中・辞退は数えない。
+    数えるのはステップ単位で、企業単位ではない。1社で ES 通過・1次面接落選なら、
+    通過1・落選1になる（企業ごとの最終到達を見るのはファネルの役割）。
     """
     if attribute not in {"route", "test_type", "industry"}:
         raise ValueError(f"集計できない属性です: {attribute}")
@@ -75,9 +94,15 @@ def funnel(steps: Iterable[StepView], step_order: Sequence[str]) -> list[FunnelR
     """ステップ名ごとの件数を、標準の選考順で返す。
 
     step_order にないステップ名（企業独自のワークなど）は末尾にまとめる。
+    選考が終わった企業の残りのステップは、そこまで進んでいないので「選考中」に数えない。
     """
+    steps = list(steps)
+    ended = ended_companies(steps)
     counts: dict[str, dict[str, int]] = {}
     for step in steps:
+        # 行を作る前に外す。終わった企業にしかないステップが、全部 0 の行として残らないように
+        if step.result == IN_PROGRESS and step.company_id in ended:
+            continue
         row = counts.setdefault(step.name, {PASSED: 0, FAILED: 0, IN_PROGRESS: 0, DECLINED: 0})
         if step.result in row:
             row[step.result] += 1

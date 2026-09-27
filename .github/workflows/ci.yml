@@ -41,7 +41,8 @@ jobs:
           cache-dependency-path: |
             pyproject.toml
             constraints.txt
-      - run: pip install -e ".[dev]" -c constraints.txt
+      # SDK を入れて、実際の型に対して検査する（入れないと anthropic は Any 扱いになる）
+      - run: pip install -e ".[dev,llm]" -c constraints.txt
       - run: python -m mypy
 
   test:
@@ -59,7 +60,8 @@ jobs:
           cache-dependency-path: |
             pyproject.toml
             constraints.txt
-      - run: pip install -e ".[dev]" -c constraints.txt
+      # SDK も入れて、本物の SDK を通信だけ差し替えて通すテスト（TestWithTheRealSdk）を走らせる
+      - run: pip install -e ".[dev,llm]" -c constraints.txt
       # 網羅率は記録として出すだけで、しきい値では落とさない
       - run: python -m pytest -v --cov
 

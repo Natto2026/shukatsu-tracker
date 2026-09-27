@@ -51,6 +51,9 @@ class Dialect(ABC):
     placeholder: str
     supports_returning: bool
     begin_sql: str = "BEGIN"
+    # マイグレーションの版を1つずつ適用するために、境界の先頭で流す文。
+    # None なら begin_sql の時点で書き込みが直列化されるので要らない
+    migration_lock_sql: str | None = None
 
     @abstractmethod
     def connect(self, target: str) -> Any:
@@ -135,6 +138,10 @@ class PostgresDialect(Dialect):
     name = "postgresql"
     placeholder = "%s"
     supports_returning = True
+    # BEGIN はロックを取らないため、同時に初回接続した2つのセッションが同じ版を
+    # 流しうる。境界が終わるまで保持される勧告ロックで、版の適用を1本ずつにする
+    # （数値は、このアプリのマイグレーション用と分かれば何でもよい）
+    migration_lock_sql = "SELECT pg_advisory_xact_lock(724001)"
 
     def connect(self, target: str) -> Any:
         try:
@@ -183,11 +190,23 @@ class PostgresDialect(Dialect):
         )
         if isinstance(error, contention):
             return BusyError(_BUSY_MESSAGE)
-        # 開いていた接続への操作で起きる OperationalError は切断（接続時の失敗は
-        # connect() が先に ConnectionFailedError にしている）
-        if isinstance(error, (psycopg.OperationalError, psycopg.InterfaceError)):
+        # 切断だけを ConnectionLostError にする（接続時の失敗は connect() が先に
+        # ConnectionFailedError にしている）。OperationalError には実行時間の打ち切り・
+        # 容量不足・メモリ不足も含まれ、それらは接続が生きているので張り直さない
+        if isinstance(error, psycopg.InterfaceError) or (
+            isinstance(error, psycopg.OperationalError) and _is_disconnect(error.sqlstate)
+        ):
             return ConnectionLostError(_LOST_MESSAGE)
         return _generic(error)
+
+
+def _is_disconnect(sqlstate: str | None) -> bool:
+    """PostgreSQL の SQLSTATE が切断を表すか。
+
+    状態コードがない OperationalError は、サーバーの応答が届かなかった（通信が切れた）
+    ときにドライバが上げるもの。08 系は接続の例外、57P01〜57P03 はサーバーの停止。
+    """
+    return sqlstate is None or sqlstate.startswith("08") or sqlstate in {"57P01", "57P02", "57P03"}
 
 
 def _swap_placeholders(sql: str, placeholder: str) -> str:

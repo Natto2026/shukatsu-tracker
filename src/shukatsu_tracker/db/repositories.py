@@ -238,6 +238,16 @@ class EsAnswerRepository(_Table):
         row = self._db.fetchone(f"{self._SELECT_WITH_COMPANY} WHERE e.id = ?", (answer_id,))
         return None if row is None else self._to_model(row)
 
+    def lock_text(self, answer_id: int) -> str | None:
+        """本文の行を境界の終わりまでロックして、いまの本文を返す。行がなければ None。
+
+        表示していた本文との突き合わせと書き込みの間に、別の接続が割り込まないようにする
+        （PostgreSQL の既定の分離レベルでは、境界を開いても他の接続を待たせないため）。
+        企業との結合を含めると FOR UPDATE を付けられないので、本文の表だけを読む。
+        """
+        row = self._db.fetchone(f"SELECT answer FROM es_answers WHERE id = ? {FOR_UPDATE}", (answer_id,))
+        return None if row is None else row["answer"]
+
     def list_all(self) -> list[EsAnswer]:
         rows = self._db.fetchall(f"{self._SELECT_WITH_COMPANY} ORDER BY e.updated_at DESC, e.id DESC")
         return [self._to_model(row) for row in rows]
