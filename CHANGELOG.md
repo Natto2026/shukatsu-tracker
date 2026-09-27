@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-27
+
 ### Fixed
 - **マイグレーションの版の中の文が一意制約に反すると、その版を黙って飛ばして次の版を適用していた問題を修正**。記録の重複と区別していなかった。記録がなければ失敗として止める
 - **PostgreSQL で、同じ本文を表示していた2つのタブが同時に保存すると、後の保存が先の保存を黙って潰す問題を修正**。行を `FOR UPDATE` でロックしてから、表示していた本文と突き合わせる
@@ -233,7 +235,8 @@
 - 初版: ダッシュボード（締切アラート）・企業管理・ES設問ライブラリ・通過率分析
 - SQLite ローカル保存（パスワード非保存方針）、pytest によるテスト、GitHub Actions CI
 
-[Unreleased]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Natto2026/shukatsu-tracker/compare/v0.6.0...v0.7.0
