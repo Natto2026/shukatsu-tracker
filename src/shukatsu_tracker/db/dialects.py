@@ -190,11 +190,23 @@ class PostgresDialect(Dialect):
         )
         if isinstance(error, contention):
             return BusyError(_BUSY_MESSAGE)
-        # 開いていた接続への操作で起きる OperationalError は切断（接続時の失敗は
-        # connect() が先に ConnectionFailedError にしている）
-        if isinstance(error, (psycopg.OperationalError, psycopg.InterfaceError)):
+        # 切断だけを ConnectionLostError にする（接続時の失敗は connect() が先に
+        # ConnectionFailedError にしている）。OperationalError には実行時間の打ち切り・
+        # 容量不足・メモリ不足も含まれ、それらは接続が生きているので張り直さない
+        if isinstance(error, psycopg.InterfaceError) or (
+            isinstance(error, psycopg.OperationalError) and _is_disconnect(error.sqlstate)
+        ):
             return ConnectionLostError(_LOST_MESSAGE)
         return _generic(error)
+
+
+def _is_disconnect(sqlstate: str | None) -> bool:
+    """PostgreSQL の SQLSTATE が切断を表すか。
+
+    状態コードがない OperationalError は、サーバーの応答が届かなかった（通信が切れた）
+    ときにドライバが上げるもの。08 系は接続の例外、57P01〜57P03 はサーバーの停止。
+    """
+    return sqlstate is None or sqlstate.startswith("08") or sqlstate in {"57P01", "57P02", "57P03"}
 
 
 def _swap_placeholders(sql: str, placeholder: str) -> str:

@@ -84,3 +84,35 @@ def test_app_shows_a_message_not_a_traceback(monkeypatch, target):
     errors = " ".join(e.value for e in at.error)
     assert "データベースに接続できませんでした" in errors
     assert "s3cret" not in errors
+
+
+class TestPostgresErrorClassification:
+    """PostgreSQL の OperationalError のうち、切断だけを「接続が切れた」に分類すること。
+
+    実行時間の打ち切りや容量不足まで切断にすると、生きている接続を捨てて張り直し、
+    利用者には事実と違う理由を伝えてしまう。
+    """
+
+    @pytest.fixture
+    def translate(self):
+        psycopg = pytest.importorskip("psycopg")
+        from shukatsu_tracker.db.dialects import PostgresDialect
+
+        return psycopg, PostgresDialect().translate_error
+
+    @pytest.mark.parametrize("name", ["QueryCanceled", "DiskFull", "OutOfMemory"])
+    def test_a_live_connection_error_is_not_reported_as_lost(self, translate, name):
+        psycopg, translate_error = translate
+        translated = translate_error(getattr(psycopg.errors, name)("詳細"))
+        assert isinstance(translated, DatabaseError)
+        assert not isinstance(translated, ConnectionLostError)
+
+    @pytest.mark.parametrize("name", ["ConnectionFailure", "AdminShutdown"])
+    def test_a_disconnect_is_reported_as_lost(self, translate, name):
+        psycopg, translate_error = translate
+        assert isinstance(translate_error(getattr(psycopg.errors, name)("詳細")), ConnectionLostError)
+
+    def test_an_error_without_a_state_code_is_a_lost_connection(self, translate):
+        """サーバーの応答が届かなかったときは状態コードがない。"""
+        psycopg, translate_error = translate
+        assert isinstance(translate_error(psycopg.OperationalError("server closed")), ConnectionLostError)
