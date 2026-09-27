@@ -130,6 +130,42 @@ def test_two_sessions_starting_together_apply_a_version_once(tmp_path):
         assert sorted(applied) == [[], ["901"]]
 
 
+@pytest.mark.skipif(not POSTGRES_DSN, reason="PostgreSQL のときだけ起きる競合")
+def test_first_connections_arriving_together_both_succeed(tmp_path):
+    """空の DB に2つのセッションが同時に初めて接続しても、どちらも失敗しないこと。
+
+    管理表の作成（CREATE TABLE IF NOT EXISTS）も、同時に流すと片方が失敗しうるため、
+    版の適用と同じロックの中で流す。競合は起きたり起きなかったりするので、数回試す。
+    """
+    for attempt in range(5):
+        with shared_target(tmp_path / str(attempt)) as dsn:
+            assert _connect_together(dsn) == []
+
+
+def _connect_together(dsn: str) -> list[Exception]:
+    """2つのセッションで同時に接続し、起きた例外を返す。"""
+    start = threading.Barrier(2)
+    errors: list[Exception] = []
+    opened = []
+
+    def open_one():
+        start.wait()
+        try:
+            opened.append(db.connect(dsn))
+        except Exception as error:
+            errors.append(error)
+
+    threads = [threading.Thread(target=open_one) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+    assert not [t for t in threads if t.is_alive()], "終わらないセッションがある"
+    for database in opened:
+        database.close()
+    return errors
+
+
 def test_reviews_have_usage_columns(conn):
     row = conn.fetchone("SELECT input_tokens, output_tokens FROM reviews WHERE 1 = 0")
     assert row is None

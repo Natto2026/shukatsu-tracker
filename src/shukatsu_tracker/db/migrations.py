@@ -122,6 +122,10 @@ def discover(directory: Path = MIGRATIONS_DIR) -> list[Migration]:
 
 def applied_versions(db: Database) -> set[str]:
     with transaction(db):
+        # PostgreSQL の CREATE TABLE IF NOT EXISTS は、2つのセッションが同時に流すと
+        # 片方が型の一意制約違反で失敗することがある。版の適用と同じロックで直列化する
+        if db.dialect.migration_lock_sql is not None:
+            db.execute(db.dialect.migration_lock_sql)
         db.execute(_BOOTSTRAP)
     rows = db.fetchall("SELECT version FROM schema_migrations")
     return {_first(row) for row in rows}
