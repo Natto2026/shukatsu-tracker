@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import threading
+import uuid
+
 import pytest
-from conftest import table_names
+from conftest import POSTGRES_DSN, table_names
 
 from shukatsu_tracker import db
 from shukatsu_tracker.db import ForeignKeyError, MigrationError, migrations, transaction
@@ -65,6 +68,77 @@ def test_a_version_applied_meanwhile_is_skipped_inside_the_boundary(conn, tmp_pa
     monkeypatch.setattr(migrations, "applied_versions", lambda db: set())
     assert migrations.apply_pending(conn, tmp_path) == []
     assert "only_once" in table_names(conn)
+
+
+def test_a_version_that_breaks_a_unique_constraint_is_not_skipped(conn, tmp_path):
+    """版の中の文が一意制約に反したら、記録の重複と取り違えて黙って飛ばさないこと。
+
+    飛ばすと、その版だけが抜けたまま次の版が適用され、起動のたびに失敗し続ける。
+    """
+    (tmp_path / "900_dup.sql").write_text(
+        "CREATE TABLE dup_target (code TEXT UNIQUE);\n"
+        "INSERT INTO dup_target (code) VALUES ('a');\n"
+        "INSERT INTO dup_target (code) VALUES ('a');",
+        encoding="utf-8",
+    )
+    (tmp_path / "901_next.sql").write_text("CREATE TABLE after_dup (id INTEGER);", encoding="utf-8")
+
+    with pytest.raises(MigrationError, match="900_dup.sql"):
+        migrations.apply_pending(conn, tmp_path)
+    applied = migrations.applied_versions(conn)
+    assert "900" not in applied
+    assert "901" not in applied
+
+
+@pytest.mark.skipif(not POSTGRES_DSN, reason="PostgreSQL のときだけ起きる競合")
+def test_two_sessions_starting_together_apply_a_version_once(tmp_path):
+    """2つのセッションが同時に初回接続しても、二度流せない版で片方が落ちないこと。
+
+    PostgreSQL の BEGIN はロックを取らず、相手の未確定の記録も見えないため、
+    両方が未適用と判断して ALTER TABLE を流し、後の方が列の重複で失敗していた。
+    """
+    import psycopg
+
+    schema = f"t{uuid.uuid4().hex[:12]}"
+    with psycopg.connect(POSTGRES_DSN, autocommit=True) as admin:
+        admin.execute(f'CREATE SCHEMA "{schema}"')
+    separator = "&" if "?" in str(POSTGRES_DSN) else "?"
+    dsn = f"{POSTGRES_DSN}{separator}options=-csearch_path%3D{schema}"
+    try:
+        (tmp_path / "900_base.sql").write_text("CREATE TABLE race (id INTEGER);", encoding="utf-8")
+        setup = db.connect(dsn)
+        migrations.apply_pending(setup, tmp_path)
+        setup.close()
+        # 相手が判定を終えるまで確定を遅らせ、競合が起きる並びを作る
+        (tmp_path / "901_add.sql").write_text(
+            "SELECT pg_sleep(1);\nALTER TABLE race ADD COLUMN extra INTEGER;", encoding="utf-8"
+        )
+        sessions = [db.connect(dsn) for _ in range(2)]
+        errors: list[Exception] = []
+        applied: list[list[str]] = []
+        start = threading.Barrier(2)
+
+        def run(database):
+            start.wait()
+            try:
+                applied.append([m.version for m in migrations.apply_pending(database, tmp_path)])
+            except Exception as error:
+                errors.append(error)
+
+        threads = [threading.Thread(target=run, args=(s,)) for s in sessions]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+        assert not [t for t in threads if t.is_alive()], "終わらないセッションがある"
+        for session in sessions:
+            session.close()
+
+        assert errors == []
+        assert sorted(applied) == [[], ["901"]]
+    finally:
+        with psycopg.connect(POSTGRES_DSN, autocommit=True) as admin:
+            admin.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
 
 def test_reviews_have_usage_columns(conn):

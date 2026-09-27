@@ -51,6 +51,9 @@ class Dialect(ABC):
     placeholder: str
     supports_returning: bool
     begin_sql: str = "BEGIN"
+    # マイグレーションの版を1つずつ適用するために、境界の先頭で流す文。
+    # None なら begin_sql の時点で書き込みが直列化されるので要らない
+    migration_lock_sql: str | None = None
 
     @abstractmethod
     def connect(self, target: str) -> Any:
@@ -135,6 +138,10 @@ class PostgresDialect(Dialect):
     name = "postgresql"
     placeholder = "%s"
     supports_returning = True
+    # BEGIN はロックを取らないため、同時に初回接続した2つのセッションが同じ版を
+    # 流しうる。境界が終わるまで保持される勧告ロックで、版の適用を1本ずつにする
+    # （数値は、このアプリのマイグレーション用と分かれば何でもよい）
+    migration_lock_sql = "SELECT pg_advisory_xact_lock(724001)"
 
     def connect(self, target: str) -> Any:
         try:
