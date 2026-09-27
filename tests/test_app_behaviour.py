@@ -773,22 +773,31 @@ class TestReviewHistoryRendering:
         assert any(self.BEACON in c.value for c in at.code)
         assert not any(self.BEACON in m.value for m in at.markdown)
 
-    def test_images_in_an_ai_answer_are_not_loaded(self, app_db):
+    @pytest.mark.parametrize(
+        "image",
+        [
+            BEACON,
+            # すでにエスケープされた記法に `\` を足すと、文字の \ ＋画像に変わってしまう
+            "\\" + BEACON,
+            "\\\\" + BEACON,
+        ],
+    )
+    def test_images_in_an_ai_answer_are_not_loaded(self, app_db, image):
         class ImageAnswer:
             name = "スタブ"
             sends_data_externally = False
 
             def review(self, request, prompt):
-                text = f"## 所見\n{TestReviewHistoryRendering.BEACON}"
+                text = f"## 所見\n{image}"
                 return ReviewResult(provider=self.name, prompt=prompt, text=text, model="stub-model")
 
         self.seed_review(app_db, provider=ImageAnswer())
         at = open_page(app_db, "添削")
         rendered = [m.value for m in at.markdown if "所見" in m.value and "beacon" in m.value]
         assert rendered, "所見の本文が見つからない"
-        # 画像の記法がすべて、直前のバックスラッシュで無効になっていること
-        assert re.search(r"(?<!\\)!\[", rendered[0]) is None
-        assert r"\![t]" in rendered[0]
+        # `!` の直前のバックスラッシュが奇数個なら `!` は文字になり、画像として読まれない
+        for backslashes in re.findall(r"(\\*)!\[", rendered[0]):
+            assert len(backslashes) % 2 == 1
 
 
 class TestLabels:

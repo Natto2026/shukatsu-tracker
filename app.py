@@ -64,7 +64,16 @@ def as_text(value: str | None, *, keep_lines: bool = False) -> str:
     return text.replace("\n", "  \n") if keep_lines else text
 
 
-_IMAGE_SYNTAX = re.compile(r"!\[")
+# 直前のバックスラッシュの並びも一緒に取る。数を見ないと、`\![` のようにすでに
+# 無害な記法へ `\` を足して `\\![`（文字の \ ＋画像）に変えてしまう
+_IMAGE_SYNTAX = re.compile(r"(\\*)!\[")
+
+
+def _escape_image(match: re.Match[str]) -> str:
+    backslashes = match.group(1)
+    if len(backslashes) % 2:  # 奇数個なら `!` はすでにエスケープされている
+        return match.group(0)
+    return backslashes + "\\!["
 
 
 def without_images(text: str) -> str:
@@ -73,7 +82,7 @@ def without_images(text: str) -> str:
     見出しや箇条書きは読みやすさのため Markdown のまま描画したい。ただし画像の記法は
     描画した時点で外部の URL を読みに行くため、`!` をエスケープして文字として出す。
     """
-    return _IMAGE_SYNTAX.sub(r"\\![", text)
+    return _IMAGE_SYNTAX.sub(_escape_image, text)
 
 
 def with_saved(options: list[str], value: str) -> tuple[list[str], int]:
