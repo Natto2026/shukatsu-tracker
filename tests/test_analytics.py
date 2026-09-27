@@ -29,22 +29,27 @@ class TestUpcomingDeadlines:
         ]
         assert analytics.upcoming_deadlines(steps, self.TODAY) == []
 
-    def test_remaining_steps_of_an_ended_company_are_ignored(self):
-        """ES で落ちた企業の、あとに残った「選考中」の締切は出さない。ほかの企業には影響しない。"""
+    def test_remaining_steps_of_an_ended_company_are_marked_not_dropped(self):
+        """落選した企業に残った「選考中」の締切は、消さずに印を付ける。ほかの企業には付けない。
+
+        企業の追加時に入った標準のステップの残りか、続いている選考かは区別できない。
+        黙って消すと、辞退したインターンのあとの本選考の締切まで見えなくなる。
+        """
         steps = [
             make_step(company_id=1, name="ES", result="落選"),
             make_step(company_id=1, name="Webテスト", deadline="2026-07-30"),
             make_step(company_id=2, name="Webテスト", deadline="2026-07-30"),
         ]
         result = analytics.upcoming_deadlines(steps, self.TODAY)
-        assert [d.step.company_id for d in result] == [2]
+        assert sorted((d.step.company_id, d.company_ended) for d in result) == [(1, True), (2, False)]
 
     def test_a_declined_company_is_also_ended(self):
         steps = [
             make_step(company_id=1, name="1次面接", result="辞退"),
             make_step(company_id=1, name="2次面接", deadline="2026-08-02"),
         ]
-        assert analytics.upcoming_deadlines(steps, self.TODAY) == []
+        (deadline,) = analytics.upcoming_deadlines(steps, self.TODAY)
+        assert deadline.company_ended
 
 
 class TestPassRateBy:
@@ -88,13 +93,21 @@ class TestFunnel:
         steps = [
             make_step(name="ES", result="通過"),
             make_step(name="ES", result="落選"),
-            make_step(name="1次面接", result="選考中"),
+            make_step(company_id=2, name="1次面接", result="選考中"),
             make_step(name="独自ワーク", result="通過"),
         ]
         rows = analytics.funnel(steps, ["ES", "Webテスト", "1次面接"])
         assert [r.step for r in rows] == ["ES", "1次面接", "独自ワーク"]
         assert rows[0].passed == 1
         assert rows[0].failed == 1
+
+    def test_a_step_only_an_ended_company_has_left_gets_no_empty_row(self):
+        """終わった企業にしか残っていないステップを、全部 0 の行として出さない。"""
+        steps = [
+            make_step(company_id=1, name="ES", result="落選"),
+            make_step(company_id=1, name="Webテスト"),
+        ]
+        assert [r.step for r in analytics.funnel(steps, ["ES", "Webテスト"])] == ["ES"]
 
     def test_remaining_steps_of_an_ended_company_are_not_in_progress(self):
         """落ちた企業の後続ステップは、進んでいないので「選考中」に数えない。"""

@@ -125,13 +125,21 @@ class DashboardSummary:
 
     @property
     def overdue(self) -> list[Deadline]:
-        """期限を過ぎたもの。"""
-        return [deadline for deadline in self.deadlines if deadline.overdue]
+        """期限を過ぎたもの。選考が終わった企業に残っているものは含めない。"""
+        return [d for d in self.deadlines if d.overdue and not d.company_ended]
 
     @property
     def upcoming(self) -> list[Deadline]:
-        """これから期限を迎えるもの。期限超過は含めない。"""
-        return [deadline for deadline in self.deadlines if not deadline.overdue]
+        """これから期限を迎えるもの。期限超過と、選考が終わった企業に残っているものは含めない。"""
+        return [d for d in self.deadlines if not d.overdue and not d.company_ended]
+
+    @property
+    def left_behind(self) -> list[Deadline]:
+        """落選・辞退した企業に、選考中のまま残っている締切。
+
+        件数には数えないが、続いている選考かもしれないので消さずに別に見せる。
+        """
+        return [d for d in self.deadlines if d.company_ended]
 
 
 class SelectionService:

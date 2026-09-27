@@ -692,6 +692,24 @@ class TestFormsKeepInputOnError:
         assert [t for t in at.text_area if t.label == "メモ"][0].value == "残したいメモ"
 
 
+class TestDashboardLeftBehind:
+    def test_a_deadline_left_in_an_ended_company_is_shown_apart(self, app_db):
+        """落選・辞退した企業に残った締切は、期限超過に数えず、別の欄に出して消さない。"""
+        company_id, step_id = seed_company(app_db)
+        database = open_db(app_db)
+        try:
+            selection = SelectionService(database)
+            selection.update_step(step_id, result="辞退")
+            selection.add_step(company_id, "本選考ES", deadline="2000-01-01")
+        finally:
+            database.close()
+        at = open_page(app_db, "ダッシュボード")
+        overdue = [m for m in at.metric if m.label == "期限超過"][0]
+        assert overdue.value == "0 件"
+        assert any("落選・辞退した企業に残っている締切（1 件）" in e.label for e in at.expander)
+        assert any("本選考ES" in m.value for m in at.markdown)
+
+
 class TestCompanySelection:
     def test_updating_the_shown_company_keeps_it_selected(self, app_db):
         """志望度や企業名を変えて更新しても、選択が先頭の企業に戻らないこと。"""

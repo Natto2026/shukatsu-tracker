@@ -208,6 +208,21 @@ if page == "ダッシュボード":
     else:
         st.success("7日以内の締切はありません。")
 
+    if summary.left_behind:
+        with st.expander(f"落選・辞退した企業に残っている締切（{len(summary.left_behind)} 件）"):
+            st.caption(
+                "落選・辞退のあとに、選考中のまま残っているステップです。上の件数には数えていません。"
+                "続いている選考（辞退したインターンのあとの本選考など）なら、企業管理で結果を見直してください。"
+                "不要なら、ステップを削除するか結果を「辞退」にすると消えます。"
+            )
+            for deadline in summary.left_behind:
+                step = deadline.step
+                st.write(
+                    f"**{as_text(step.company_name)}** — {as_text(step.name)}"
+                    f"（締切 {step.deadline}）: "
+                    + (f"{-deadline.days_left}日超過" if deadline.overdue else f"あと{deadline.days_left}日")
+                )
+
     st.subheader("選考状況一覧")
     if summary.companies:
         rows = [

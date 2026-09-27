@@ -76,6 +76,10 @@ class Deadline:
 
     step: StepView
     days_left: int
+    # 落選・辞退のあとに残っているステップか。企業の追加時にまとめて入った標準の
+    # ステップが選考中のまま残ることが多いが、辞退したインターンのあとの本選考の
+    # ように本当に続いている場合もあり、区別できないので消さずに印を付ける
+    company_ended: bool = False
 
     @property
     def overdue(self) -> bool:

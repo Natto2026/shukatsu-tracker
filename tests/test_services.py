@@ -255,6 +255,21 @@ class TestDashboard:
         assert [d.step.company_name for d in summary.deadlines] == ["継続中株式会社"]
         assert summary.overdue == []
 
+    def test_a_deadline_left_in_an_ended_company_is_kept_aside_not_dropped(self, selection):
+        """落選・辞退した企業に残った締切は、件数に数えず、消さずに別に返す。
+
+        辞退したインターンのあとに足した本選考の締切が、黙って消えないように。
+        """
+        company_id = selection.add_company(Company(name="テスト株式会社"), with_default_steps=False)
+        intern = selection.add_step(company_id, "夏インターン")
+        selection.update_step(intern, result="辞退")
+        selection.add_step(company_id, "本選考ES", deadline=days_from_today(-1))
+
+        summary = selection.dashboard(date.today())
+        assert summary.overdue == []
+        assert summary.upcoming == []
+        assert [d.step.name for d in summary.left_behind] == ["本選考ES"]
+
     def test_overdue_is_separated(self, selection):
         company_id = selection.add_company(Company(name="テスト株式会社"), with_default_steps=False)
         selection.add_step(company_id, "ES", deadline=days_from_today(-2))
