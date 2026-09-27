@@ -48,6 +48,21 @@ class TestAddCompany:
 class TestCompanyValidation:
     """選択肢と書式の検証がサービス層にあること（画面や CSV だけに置かない）。"""
 
+    @pytest.mark.parametrize("name", ["A社\n# 見出し", "A社\tB", "A\r社"])
+    def test_a_company_name_with_control_characters_is_rejected(self, selection, name):
+        with pytest.raises(ValueError, match="制御文字"):
+            selection.add_company(Company(name=name), with_default_steps=False)
+
+    def test_renaming_to_a_multi_line_name_is_rejected(self, selection):
+        company_id = selection.add_company(Company(name="A社"), with_default_steps=False)
+        with pytest.raises(ValueError, match="制御文字"):
+            selection.update_company(company_id, name="A社\n2行目")
+
+    def test_a_step_name_with_a_line_break_is_rejected(self, selection):
+        company_id = selection.add_company(Company(name="A社"), with_default_steps=False)
+        with pytest.raises(ValueError, match="制御文字"):
+            selection.add_step(company_id, "ES\n2行目")
+
     @pytest.mark.parametrize(
         ("field", "value", "label"),
         [

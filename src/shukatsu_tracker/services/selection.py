@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import unicodedata
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -39,6 +40,16 @@ _COMPANY_LABELS = {"industry": "業界", "priority": "志望度", "route": "応�
 _TRIMMED = ("name", "mypage_url", "login_email")
 
 
+def check_single_line(value: str, label: str) -> None:
+    """企業名・ステップ名に、改行やタブなどの制御文字がないことを確かめる。
+
+    一覧・見出し・書き出しの Markdown はどれも名前が1行であることを前提にしている。
+    改行が入ると見出しが割れ、2行目が別の見出しや指示として読まれてしまう。
+    """
+    if any(unicodedata.category(char) == "Cc" for char in value):
+        raise ValueError(f"{label}に改行やタブなどの制御文字は使えません")
+
+
 def _validated_company_fields(fields: Mapping[str, object]) -> dict[str, Any]:
     """企業の列の値を検証し、整えて返す。選択肢にない値・空の企業名は ValueError。"""
     cleaned: dict[str, Any] = {}
@@ -47,6 +58,8 @@ def _validated_company_fields(fields: Mapping[str, object]) -> dict[str, Any]:
             value = value.strip()
         if key == "name" and not value:
             raise ValueError("企業名は必須です")
+        if key == "name" and isinstance(value, str):
+            check_single_line(value, "企業名")
         choices = _COMPANY_CHOICES.get(key)
         if choices is not None and value not in choices:
             raise ValueError(
@@ -198,6 +211,7 @@ class SelectionService:
         label = name.strip()
         if not label:
             raise ValueError("ステップ名は必須です")
+        check_single_line(label, "ステップ名")
         checked_deadline = _validated_deadline(deadline)
         # 並び順を決める読み取りも境界の中で行う。外で読むと、読んでから書くまでの
         # 間に別の追加が割り込み、同じ並び順が2つできる。SQLite は境界の開始で
