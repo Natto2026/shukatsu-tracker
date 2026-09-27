@@ -29,6 +29,23 @@ class TestUpcomingDeadlines:
         ]
         assert analytics.upcoming_deadlines(steps, self.TODAY) == []
 
+    def test_remaining_steps_of_an_ended_company_are_ignored(self):
+        """ES で落ちた企業の、あとに残った「選考中」の締切は出さない。ほかの企業には影響しない。"""
+        steps = [
+            make_step(company_id=1, name="ES", result="落選"),
+            make_step(company_id=1, name="Webテスト", deadline="2026-07-30"),
+            make_step(company_id=2, name="Webテスト", deadline="2026-07-30"),
+        ]
+        result = analytics.upcoming_deadlines(steps, self.TODAY)
+        assert [d.step.company_id for d in result] == [2]
+
+    def test_a_declined_company_is_also_ended(self):
+        steps = [
+            make_step(company_id=1, name="1次面接", result="辞退"),
+            make_step(company_id=1, name="2次面接", deadline="2026-08-02"),
+        ]
+        assert analytics.upcoming_deadlines(steps, self.TODAY) == []
+
 
 class TestPassRateBy:
     def test_rate_by_route(self):
@@ -78,6 +95,18 @@ class TestFunnel:
         assert [r.step for r in rows] == ["ES", "1次面接", "独自ワーク"]
         assert rows[0].passed == 1
         assert rows[0].failed == 1
+
+    def test_remaining_steps_of_an_ended_company_are_not_in_progress(self):
+        """落ちた企業の後続ステップは、進んでいないので「選考中」に数えない。"""
+        steps = [
+            make_step(company_id=1, name="ES", result="落選"),
+            make_step(company_id=1, name="Webテスト"),
+            make_step(company_id=2, name="ES", result="通過"),
+            make_step(company_id=2, name="Webテスト"),
+        ]
+        rows = {r.step: r for r in analytics.funnel(steps, ["ES", "Webテスト"])}
+        assert rows["Webテスト"].in_progress == 1
+        assert (rows["ES"].passed, rows["ES"].failed) == (1, 1)
 
 
 class TestCompanyStatus:

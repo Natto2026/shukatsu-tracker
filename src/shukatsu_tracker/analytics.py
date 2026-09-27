@@ -30,14 +30,27 @@ def parse_date(value: str | None) -> date | None:
         return None
 
 
+def ended_companies(steps: Iterable[StepView]) -> set[int]:
+    """落選・辞退で選考が終わった企業の ID。
+
+    終わった企業にも、後続のステップが「選考中」のまま残る（企業の追加時に標準の
+    ステップをまとめて登録するため）。それらは実際には進むことがないので、締切や
+    ファネルの「選考中」から外すときに使う。
+    """
+    return {step.company_id for step in steps if step.result in (FAILED, DECLINED)}
+
+
 def upcoming_deadlines(steps: Iterable[StepView], today: date, within_days: int = 7) -> list[Deadline]:
     """締切が within_days 日以内の未完了ステップを、締切が近い順に返す。
 
-    期限超過のものも含める（見落としこそ防ぎたいため）。
+    期限超過のものも含める（見落としこそ防ぎたいため）。選考が終わった企業の
+    残りのステップは、もう来ない締切なので含めない。
     """
+    steps = list(steps)
+    ended = ended_companies(steps)
     found: list[Deadline] = []
     for step in steps:
-        if step.result != IN_PROGRESS:
+        if step.result != IN_PROGRESS or step.company_id in ended:
             continue
         deadline = parse_date(step.deadline)
         if deadline is None:
@@ -75,10 +88,15 @@ def funnel(steps: Iterable[StepView], step_order: Sequence[str]) -> list[FunnelR
     """ステップ名ごとの件数を、標準の選考順で返す。
 
     step_order にないステップ名（企業独自のワークなど）は末尾にまとめる。
+    選考が終わった企業の残りのステップは、そこまで進んでいないので「選考中」に数えない。
     """
+    steps = list(steps)
+    ended = ended_companies(steps)
     counts: dict[str, dict[str, int]] = {}
     for step in steps:
         row = counts.setdefault(step.name, {PASSED: 0, FAILED: 0, IN_PROGRESS: 0, DECLINED: 0})
+        if step.result == IN_PROGRESS and step.company_id in ended:
+            continue
         if step.result in row:
             row[step.result] += 1
 
