@@ -598,6 +598,51 @@ class TestReviewIndustry:
         assert "数字と根拠の確かさ" not in review.prompt
 
 
+class TestFormsKeepInputOnError:
+    """追加フォームは、弾かれたときに入力を消さず、保存できたときだけ空に戻すこと。
+
+    AppTest は `clear_on_submit` による消去を再現しないため、以前の不具合そのものは
+    ここでは再現できない。置き換えた仕組み（成功時だけフォームのキーを変える）が、
+    失敗時には作り直さず、成功時には作り直すことを確かめる。
+    """
+
+    @staticmethod
+    def add_form_answer(at: AppTest):
+        """「設問・回答を追加」の回答欄。一覧の入力欄より前に描画される。"""
+        return [t for t in at.text_area if t.label == "回答"][0]
+
+    def test_es_answer_survives_a_missing_question(self, app_db):
+        at = open_page(app_db, "ES管理")
+        self.add_form_answer(at).set_value("書きかけの回答")
+        [b for b in at.button if b.label == "保存"][0].click().run()
+        assert not at.exception, at.exception
+
+        assert [e.value for e in at.error] == ["設問文を入力してください。"]
+        assert self.add_form_answer(at).value == "書きかけの回答"
+
+    def test_es_form_is_cleared_after_saving(self, app_db):
+        at = open_page(app_db, "ES管理")
+        [t for t in at.text_input if t.label == "設問文"][0].set_value("志望動機")
+        self.add_form_answer(at).set_value("保存する回答")
+        [b for b in at.button if b.label == "保存"][0].click().run()
+        assert not at.exception, at.exception
+
+        assert [t for t in at.text_input if t.label == "設問文"][0].value == ""
+        assert self.add_form_answer(at).value == ""
+
+    def test_company_form_survives_a_duplicate_name(self, app_db):
+        seed_company(app_db)
+        at = open_page(app_db, "企業管理")
+        [t for t in at.text_input if t.label == "企業名 *"][0].set_value("テスト株式会社")
+        [t for t in at.text_area if t.label == "メモ"][0].set_value("残したいメモ")
+        [b for b in at.button if b.label == "追加"][0].click().run()
+        assert not at.exception, at.exception
+
+        assert at.error, "重複の知らせが出ていない"
+        assert [t for t in at.text_input if t.label == "企業名 *"][0].value == "テスト株式会社"
+        assert [t for t in at.text_area if t.label == "メモ"][0].value == "残したいメモ"
+
+
 class TestLabels:
     def test_review_page_title_matches_the_menu(self, app_db):
         """添削のページの題が、メニューの項目名とずれていないこと。"""

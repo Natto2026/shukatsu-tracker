@@ -102,6 +102,18 @@ def show_flash() -> None:
         getattr(st, kind)(message)
 
 
+def form_key(name: str) -> str:
+    """追加フォームのキー。保存に成功したときだけ変えて、入力欄を空で作り直す。
+
+    `clear_on_submit` は検証や保存に失敗したときも入力を消してしまうため使わない。
+    """
+    return f"{name}:{st.session_state.get(f'{name}_round', 0)}"
+
+
+def reset_form(name: str) -> None:
+    st.session_state[f"{name}_round"] = st.session_state.get(f"{name}_round", 0) + 1
+
+
 def run_write(action, success: str | None = None) -> bool:
     """書き込みを実行し、失敗したら利用者に伝わる文面にして返す。"""
     try:
@@ -198,7 +210,7 @@ elif page == "企業管理":
     st.title("企業管理")
     companies = selection.companies()
 
-    with st.expander("企業を追加", expanded=not companies), st.form("add_company", clear_on_submit=True):
+    with st.expander("企業を追加", expanded=not companies), st.form(form_key("add_company")):
         name = st.text_input("企業名 *")
         c1, c2, c3 = st.columns(3)
         industry = c1.selectbox("業界", constants.INDUSTRIES)
@@ -229,6 +241,7 @@ elif page == "企業管理":
                 ),
                 success=f"「{as_text(name.strip())}」を追加しました。",
             ):
+                reset_form("add_company")
                 st.rerun()
 
     if not companies:
@@ -334,7 +347,7 @@ elif page == "企業管理":
                     flash("変更はありませんでした。", "info")
                 st.rerun()
 
-    with st.form("add_step", clear_on_submit=True):
+    with st.form(form_key("add_step")):
         c1, c2 = st.columns([3, 1])
         step_name = c1.text_input("ステップを追加（例: 3次面接、リクルーター面談）")
         if c2.form_submit_button("追加"):
@@ -344,6 +357,7 @@ elif page == "企業管理":
                 lambda: selection.add_step(company_id, step_name),
                 success=f"「{as_text(step_name.strip())}」を追加しました。",
             ):
+                reset_form("add_step")
                 st.rerun()
 
     with st.expander("不要なステップを削除"):
@@ -420,7 +434,7 @@ elif page == "ES管理":
     company_options: dict[str, int | None] = {"（汎用）": None}
     company_options.update({c.name: c.id for c in companies})
 
-    with st.expander("設問・回答を追加"), st.form("add_es", clear_on_submit=True):
+    with st.expander("設問・回答を追加"), st.form(form_key("add_es")):
         c1, c2, c3 = st.columns([2, 2, 1])
         category = c1.selectbox("カテゴリ", constants.ES_CATEGORIES)
         company_name = c2.selectbox("企業", list(company_options))
@@ -442,6 +456,7 @@ elif page == "ES管理":
                 ),
                 success="保存しました。",
             ):
+                reset_form("add_es")
                 st.rerun()
 
     all_answers = es.answers()
