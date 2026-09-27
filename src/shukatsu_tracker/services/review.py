@@ -20,6 +20,9 @@ from ..review.criteria import CriteriaSet
 from ..review.prompt import ReviewRequest
 from ..review.providers import ExportProvider, ReviewProvider
 
+NO_INDUSTRY = ""
+"""業界を寄せないことを明示する値。`industry=None` は「提出先の業界を使う」の意味になる。"""
+
 
 class ReviewService:
     """設問と回答に対して所見を取り、履歴として残す。"""
@@ -48,6 +51,11 @@ class ReviewService:
     def build_request(
         self, answer: EsAnswer, *, industry: str | None = None, note: str = ""
     ) -> ReviewRequest:
+        """依頼の中身を組み立てる。
+
+        `industry` が None なら提出先の業界を使い、`NO_INDUSTRY` なら共通の観点だけにする。
+        画面で「指定なし」を選んだときに、提出先の業界へ戻らないよう区別している。
+        """
         return ReviewRequest(
             question=answer.question,
             answer=answer.answer,

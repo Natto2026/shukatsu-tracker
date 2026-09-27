@@ -1,7 +1,6 @@
 # 起動と保守の手引き
 
 起動、保存先の切り替え、バックアップと復旧、スキーマ更新のときに何が起きるかをまとめる。
-利用実績にもとづく手順ではなく、実装とテストから導いた手引きである(現在の利用状況は README を参照)。
 
 ## 起動と停止
 
@@ -44,8 +43,10 @@ SHUKATSU_DB=postgresql://shukatsu:devpass@127.0.0.1:5432/shukatsu streamlit run 
 ### SQLite
 
 アプリを止めてから、`data/shukatsu.db` を丸ごとコピーする。1ファイルなのでこれで完結する。
+置き場所の `backup/` は .gitignore で除外してある（中身は選考データそのものなので、コミットしない）。
 
 ```bash
+mkdir -p backup
 cp data/shukatsu.db backup/shukatsu-$(date +%Y%m%d).db
 ```
 
@@ -54,6 +55,7 @@ cp data/shukatsu.db backup/shukatsu-$(date +%Y%m%d).db
 ### PostgreSQL
 
 ```bash
+mkdir -p backup
 pg_dump  -h 127.0.0.1 -U shukatsu shukatsu > backup/shukatsu-$(date +%Y%m%d).sql   # 取得
 psql     -h 127.0.0.1 -U shukatsu shukatsu < backup/shukatsu-YYYYMMDD.sql          # 復旧
 ```
@@ -116,7 +118,8 @@ CSV に書いた順に並ぶ。企業の項目（業界など）は、その企�
 - 接続時に未適用の版だけを順に流し、適用した版を `schema_migrations` テーブルに記録する。
   起動のたびに自動で行われるので、手で流す操作はない
 - 適用は1版ずつトランザクションで囲む。途中で失敗した版は巻き戻り、記録も残らない
-- 複数のプロセスが同時に起動しても、記録の衝突で起動に失敗しないようにしてある
+- 複数のプロセスが同時に起動しても、同じ版を二度流して起動に失敗しないようにしてある
+  （PostgreSQL では勧告ロックで版の適用を1本ずつにする。SQLite は書き込みロックで直列になる）
 - **戻す仕組みは用意していない**。版を上げる前に上のバックアップを取り、戻したければそれを戻す
 
 新しい版を足すときの手順は [CONTRIBUTING.md](../CONTRIBUTING.md) の「スキーマ変更は新しい migration ファイルで行う」を参照。

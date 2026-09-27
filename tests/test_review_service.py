@@ -6,7 +6,7 @@ import pytest
 
 from shukatsu_tracker.models import Company, EsAnswer
 from shukatsu_tracker.review.providers import ReviewResult
-from shukatsu_tracker.services import EsService, SelectionService
+from shukatsu_tracker.services import NO_INDUSTRY, EsService, SelectionService
 
 
 class StubProvider:
@@ -106,6 +106,24 @@ def test_industry_comes_from_the_company(conn, reviewer):
     assert reviewer.industry_of(stored) == "金融"
     built = reviewer.build_prompt(stored)
     assert "数字と根拠の確かさ" in built
+
+
+def test_no_industry_is_not_replaced_by_the_company_industry(conn, reviewer):
+    """画面で「指定なし」を選んだら、提出先が金融でも共通の観点だけで送り、そのとおり残す。"""
+    selection = SelectionService(conn)
+    company_id = selection.add_company(
+        Company(name="テスト株式会社", industry="金融"), with_default_steps=False
+    )
+    es = EsService(conn)
+    answer_id = es.add(EsAnswer(question="設問", answer="本文", company_id=company_id))
+    stored = es.answer(answer_id)
+    assert stored is not None
+
+    built = reviewer.build_prompt(stored, industry=NO_INDUSTRY)
+    assert "数字と根拠の確かさ" not in built
+    review = reviewer.run(stored, provider=StubProvider(), industry=NO_INDUSTRY)
+    assert review.industry == ""
+    assert "数字と根拠の確かさ" not in review.prompt
 
 
 def test_industry_can_be_overridden(conn, reviewer, saved_answer):

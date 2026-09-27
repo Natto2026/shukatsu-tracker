@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 
 import pytest
@@ -15,6 +17,7 @@ from streamlit.testing.v1 import AppTest
 from shukatsu_tracker import db
 from shukatsu_tracker.db import CompanyRepository, DatabaseError, StepRepository, transaction
 from shukatsu_tracker.models import Company, EsAnswer
+from shukatsu_tracker.review.providers import ReviewResult
 from shukatsu_tracker.services import EsService, ReviewService, SelectionService
 
 APP_PATH = str(Path(__file__).parent.parent / "app.py")
@@ -86,6 +89,23 @@ class TestNoWriteOnRender:
         submit[0].click().run()
         assert not at.exception, at.exception
         assert read_step(app_db, step_id) == ("2026/10/01", "選考中")
+
+    def test_a_saved_deadline_can_be_cleared(self, app_db):
+        """保存済みの締切を画面から空に戻せること。
+
+        日付の入力欄は初期値が空のときしか空に戻せないため、別のチェックで消す。
+        """
+        _, step_id = seed_company(app_db, deadline="2026-10-01")
+        at = open_page(app_db, "企業管理")
+        [c for c in at.checkbox if c.label == "締切を消す"][0].check()
+        [b for b in at.button if b.label == "選考ステップを保存"][0].click().run()
+        assert not at.exception, at.exception
+        assert read_step(app_db, step_id) == (None, "選考中")
+
+    def test_a_step_without_a_deadline_has_nothing_to_clear(self, app_db):
+        seed_company(app_db)
+        at = open_page(app_db, "企業管理")
+        assert not [c for c in at.checkbox if c.label == "締切を消す"]
 
     def test_rendering_does_not_revert_an_out_of_band_update(self, app_db):
         """別の場所で更新された値を、古い表示のまま書き戻さないこと。"""
@@ -330,6 +350,69 @@ class TestUserTextIsNotMarkdown:
         assert self.HOSTILE not in labels[0]
         assert labels[0].count(r"\*\*太字\*\*") == 2
 
+    def test_step_name_in_the_status_heading_is_escaped(self, app_db):
+        """企業の見出しの状況（「〇〇待ち」）にもステップ名が入るので、同じく解釈させない。"""
+        database = open_db(app_db)
+        try:
+            selection = SelectionService(database)
+            company_id = selection.add_company(Company(name="テスト株式会社"), with_default_steps=False)
+            selection.add_step(company_id, "![画像](https://example.com/t.png)")
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+        heading = [m.value for m in at.markdown if m.value.startswith("### ")][0]
+        assert "![画像](" not in heading
+        assert r"\!\[画像\]" in heading
+
+    def test_streamlit_specific_syntax_is_not_interpreted(self, app_db):
+        """数式（$）・絵文字や色やアイコン（:…:）も、書いたとおりに出す。"""
+        database = open_db(app_db)
+        try:
+            SelectionService(database).add_company(
+                Company(name="テスト株式会社", memo="年収$500万〜$800万 :material/home: 10:00"),
+                with_default_steps=False,
+            )
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+        memo = [c.value for c in at.caption if "年収" in c.value][0]
+        assert r"\$500" in memo
+        assert ":material/home:" not in memo
+        assert "&#58;material/home&#58;" in memo
+
+    def test_a_value_in_an_error_message_is_escaped(self, app_db):
+        """入力エラーの文面に入る利用者の値（古い選択肢の値など）も解釈させない。"""
+        database = open_db(app_db)
+        try:
+            company_id = SelectionService(database).add_company(
+                Company(name="テスト株式会社"), with_default_steps=False
+            )
+            with transaction(database):
+                CompanyRepository(database).update(company_id, industry="旧業界*x*")
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+        [b for b in at.button if b.label == "更新"][0].click().run()
+        errors = [e.value for e in at.error if "旧業界" in e.value]
+        assert errors, "エラーの文面が見つからない"
+        assert r"旧業界\*x\*" in errors[0]
+
+    def test_memo_lines_cannot_become_a_heading_or_a_code_block(self, app_db):
+        """メモの改行は残すが、次の行の === で見出しに、4字下げでコードブロックにならないこと。"""
+        database = open_db(app_db)
+        try:
+            SelectionService(database).add_company(
+                Company(name="テスト株式会社", memo="1行目のメモ\n===\n\n    4字下げの行"),
+                with_default_steps=False,
+            )
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+        memo = [c.value for c in at.caption if "1行目のメモ" in c.value][0]
+        assert r"\=\=\=" in memo
+        assert "\n    4字下げ" not in memo
+        assert "&#32;&#32;&#32;&#32;4字下げ" in memo
+
 
 class TestDestructiveActionsNeedConfirmation:
     def test_delete_is_disabled_until_confirmed(self, app_db):
@@ -566,9 +649,210 @@ class TestCsvImport:
         assert stored == {"アオゾラ電機": "先に登録", "コダマ製作所": ""}
 
 
+class TestReviewIndustry:
+    def test_choosing_no_industry_is_what_gets_sent_and_saved(self, app_db):
+        """提出先が金融でも「指定なし」を選べば、金融の観点を足さずに送り、そのとおり残すこと。
+
+        画面の観点表は共通の観点だけなのに、送る文面は提出先の業界に戻っていた。
+        """
+        database = open_db(app_db)
+        try:
+            company_id = SelectionService(database).add_company(
+                Company(name="テスト株式会社", industry="金融"), with_default_steps=False
+            )
+            answer_id = EsService(database).add(
+                EsAnswer(question="志望動機", answer="本文", company_id=company_id)
+            )
+        finally:
+            database.close()
+        at = open_page(app_db, "添削")
+        industry = [s for s in at.selectbox if s.label == "観点を寄せる業界"][0]
+        assert industry.value == "金融"
+        industry.set_value("指定なし").run()
+        [b for b in at.button if b.label == "所見を取る"][0].click().run()
+        assert not at.exception, at.exception
+
+        database = open_db(app_db)
+        try:
+            (review,) = ReviewService(database).history(answer_id)
+        finally:
+            database.close()
+        assert review.industry == ""
+        assert "数字と根拠の確かさ" not in review.prompt
+
+
+class TestFormsKeepInputOnError:
+    """追加フォームは、弾かれたときに入力を消さず、保存できたときだけ空に戻すこと。
+
+    AppTest は `clear_on_submit` による消去を再現しないため、以前の不具合そのものは
+    ここでは再現できない。置き換えた仕組み（成功時だけフォームのキーを変える）が、
+    失敗時には作り直さず、成功時には作り直すことを確かめる。
+    """
+
+    @staticmethod
+    def add_form_answer(at: AppTest):
+        """「設問・回答を追加」の回答欄。一覧の入力欄より前に描画される。"""
+        return [t for t in at.text_area if t.label == "回答"][0]
+
+    def test_es_answer_survives_a_missing_question(self, app_db):
+        at = open_page(app_db, "ES管理")
+        self.add_form_answer(at).set_value("書きかけの回答")
+        [b for b in at.button if b.label == "保存"][0].click().run()
+        assert not at.exception, at.exception
+
+        assert [e.value for e in at.error] == ["設問文を入力してください。"]
+        assert self.add_form_answer(at).value == "書きかけの回答"
+
+    def test_es_form_is_cleared_after_saving(self, app_db):
+        at = open_page(app_db, "ES管理")
+        [t for t in at.text_input if t.label == "設問文"][0].set_value("志望動機")
+        self.add_form_answer(at).set_value("保存する回答")
+        [b for b in at.button if b.label == "保存"][0].click().run()
+        assert not at.exception, at.exception
+
+        assert [t for t in at.text_input if t.label == "設問文"][0].value == ""
+        assert self.add_form_answer(at).value == ""
+
+    def test_company_form_survives_a_duplicate_name(self, app_db):
+        seed_company(app_db)
+        at = open_page(app_db, "企業管理")
+        [t for t in at.text_input if t.label == "企業名 *"][0].set_value("テスト株式会社")
+        [t for t in at.text_area if t.label == "メモ"][0].set_value("残したいメモ")
+        [b for b in at.button if b.label == "追加"][0].click().run()
+        assert not at.exception, at.exception
+
+        assert at.error, "重複の知らせが出ていない"
+        assert [t for t in at.text_input if t.label == "企業名 *"][0].value == "テスト株式会社"
+        assert [t for t in at.text_area if t.label == "メモ"][0].value == "残したいメモ"
+
+
+class TestDashboardLeftBehind:
+    def test_a_deadline_left_in_an_ended_company_is_shown_apart(self, app_db):
+        """落選・辞退した企業に残った締切は、期限超過に数えず、別の欄に出して消さない。"""
+        company_id, step_id = seed_company(app_db)
+        database = open_db(app_db)
+        try:
+            selection = SelectionService(database)
+            selection.update_step(step_id, result="辞退")
+            selection.add_step(company_id, "本選考ES", deadline="2000-01-01")
+        finally:
+            database.close()
+        at = open_page(app_db, "ダッシュボード")
+        overdue = [m for m in at.metric if m.label == "期限超過"][0]
+        assert overdue.value == "0 件"
+        assert any("落選・辞退した企業に残っている締切（1 件）" in e.label for e in at.expander)
+        assert any("本選考ES" in m.value for m in at.markdown)
+
+
+class TestCompanySelection:
+    def test_updating_the_shown_company_keeps_it_selected(self, app_db):
+        """志望度や企業名を変えて更新しても、選択が先頭の企業に戻らないこと。"""
+        database = open_db(app_db)
+        try:
+            selection = SelectionService(database)
+            selection.add_company(Company(name="A社", priority="A"), with_default_steps=False)
+            b_id = selection.add_company(Company(name="B社", priority="B"), with_default_steps=False)
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+        at.selectbox(key="company_selected").set_value(b_id).run()
+
+        [s for s in at.selectbox if s.label == "志望度"][0].set_value("C").run()
+        [b for b in at.button if b.label == "更新"][0].click().run()
+        assert not at.exception, at.exception
+        assert at.selectbox(key="company_selected").value == b_id
+        assert [m.value for m in at.markdown if m.value.startswith("### ")][0].startswith("### B社")
+
+    def test_the_chosen_company_survives_a_visit_to_another_page(self, app_db):
+        """別のページを見て戻っても、選んでいた企業のままであること。"""
+        database = open_db(app_db)
+        try:
+            selection = SelectionService(database)
+            selection.add_company(Company(name="A社", priority="A"), with_default_steps=False)
+            c_id = selection.add_company(Company(name="C社", priority="C"), with_default_steps=False)
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+        at.selectbox(key="company_selected").set_value(c_id).run()
+        at.sidebar.radio[0].set_value("ダッシュボード").run()
+        at.sidebar.radio[0].set_value("企業管理").run()
+        assert not at.exception, at.exception
+        assert at.selectbox(key="company_selected").value == c_id
+
+    def test_a_company_named_like_the_generic_choice_does_not_hide_it(self, app_db):
+        """「（汎用）」という名前の企業があっても、汎用の回答を登録できること。"""
+        database = open_db(app_db)
+        try:
+            SelectionService(database).add_company(Company(name="（汎用）"), with_default_steps=False)
+        finally:
+            database.close()
+        at = open_page(app_db, "ES管理")
+        company = [s for s in at.selectbox if s.label == "企業"][0]
+        assert len(company.options) == 2
+        [t for t in at.text_input if t.label == "設問文"][0].set_value("志望動機")
+        [b for b in at.button if b.label == "保存"][0].click().run()
+        assert not at.exception, at.exception
+
+        database = open_db(app_db)
+        try:
+            (answer,) = EsService(database).answers()
+        finally:
+            database.close()
+        assert answer.company_id is None
+
+
+class TestReviewHistoryRendering:
+    """所見の履歴を開いただけで、外部の画像を読みに行かないこと。"""
+
+    BEACON = "![t](https://example.com/beacon.png)"
+
+    def seed_review(self, app_db, *, provider=None, note: str = "") -> None:
+        answer_id = seed_answer(app_db)
+        database = open_db(app_db)
+        try:
+            stored = EsService(database).answer(answer_id)
+            assert stored is not None
+            ReviewService(database).run(stored, provider=provider, note=note)
+        finally:
+            database.close()
+
+    def test_an_exported_prompt_is_shown_as_is_not_rendered(self, app_db):
+        """通信しない実行先の結果は依頼文そのもの。補足に書いた記法を描画しない。"""
+        self.seed_review(app_db, note=self.BEACON)
+        at = open_page(app_db, "添削")
+        assert any(self.BEACON in c.value for c in at.code)
+        assert not any(self.BEACON in m.value for m in at.markdown)
+
+    @pytest.mark.parametrize(
+        "image",
+        [
+            BEACON,
+            # すでにエスケープされた記法に `\` を足すと、文字の \ ＋画像に変わってしまう
+            "\\" + BEACON,
+            "\\\\" + BEACON,
+        ],
+    )
+    def test_images_in_an_ai_answer_are_not_loaded(self, app_db, image):
+        class ImageAnswer:
+            name = "スタブ"
+            sends_data_externally = False
+
+            def review(self, request, prompt):
+                text = f"## 所見\n{image}"
+                return ReviewResult(provider=self.name, prompt=prompt, text=text, model="stub-model")
+
+        self.seed_review(app_db, provider=ImageAnswer())
+        at = open_page(app_db, "添削")
+        rendered = [m.value for m in at.markdown if "所見" in m.value and "beacon" in m.value]
+        assert rendered, "所見の本文が見つからない"
+        # `!` の直前のバックスラッシュが奇数個なら `!` は文字になり、画像として読まれない
+        for backslashes in re.findall(r"(\\*)!\[", rendered[0]):
+            assert len(backslashes) % 2 == 1
+
+
 class TestLabels:
     def test_review_page_title_matches_the_menu(self, app_db):
-        """メニューの項目名とページの題がずれていないこと。"""
+        """添削のページの題が、メニューの項目名とずれていないこと。"""
         at = open_page(app_db, "添削")
         assert [t.value for t in at.title] == ["添削"]
 
@@ -584,6 +868,30 @@ class TestLabels:
         funnel = at.dataframe[-1].value
         assert funnel.index.name == "選考ステップ"
         assert "step" not in [funnel.index.name, *funnel.columns]
+
+    def test_funnel_axis_has_only_whole_number_ticks(self, app_db):
+        """件数が少なくても、目盛りが 0.5 刻みで「0, 1, 1」と重ならないこと。"""
+        _, step_id = seed_company(app_db)
+        database = open_db(app_db)
+        try:
+            SelectionService(database).update_step(step_id, result="通過")
+        finally:
+            database.close()
+        at = open_page(app_db, "分析")
+        spec = json.loads(at.get("vega_lite_chart")[0].proto.spec)
+        assert spec["encoding"]["x"]["axis"]["values"] == [0, 1]
+
+    def test_pass_rate_is_a_number_so_it_sorts_by_value(self, app_db):
+        """通過率の列は数値で渡す。文字列だと並べ替えが "100%" < "33%" < "7%" の辞書順になる。"""
+        _, step_id = seed_company(app_db)
+        database = open_db(app_db)
+        try:
+            SelectionService(database).update_step(step_id, result="通過")
+        finally:
+            database.close()
+        at = open_page(app_db, "分析")
+        rates = at.dataframe[0].value
+        assert rates["通過率"].tolist() == [1.0]
 
 
 class TestConnectionScope:

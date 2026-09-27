@@ -30,6 +30,7 @@ from shukatsu_tracker.models import Company, EsAnswer
 from shukatsu_tracker.review import ReviewError
 from shukatsu_tracker.review.providers import available_providers
 from shukatsu_tracker.services import (
+    NO_INDUSTRY,
     UNSET,
     CsvFormatError,
     CsvImportService,
@@ -45,12 +46,46 @@ DB_TARGET = os.environ.get("SHUKATSU_DB", str(DEFAULT_DB))
 
 st.set_page_config(page_title="shukatsu-tracker", layout="wide")
 
-_MARKDOWN_SPECIALS = re.compile(r"([\\`*_{}\[\]()#+\-.!|>~])")
+# Markdown の記号に加え、Streamlit が独自に解釈する記号も対象にする。
+# $ は数式、< は自動リンク、& は文字参照。: は絵文字（:smile:）・色（:red[…]）・
+# アイコン（:material/…:）の記法で、アイコンはバックスラッシュでは止まらないため
+# 文字参照 &#58; に置き換える（表示は : のまま）。= は次の行に置くと前の行を見出しにする
+_MARKDOWN_SPECIALS = re.compile(r"([\\`*_{}\[\]()#+\-.!|>~$<&=])")
+# 行頭の空白。4つ以上並ぶとコードブロックになるため、文字参照にして字下げとして扱わせない
+_LEADING_SPACE = re.compile(r"^[ \t]+", re.MULTILINE)
 
 
-def as_text(value: str | None) -> str:
-    """利用者が入れた文字列を、Markdown として解釈されない形にする。"""
-    return "" if not value else _MARKDOWN_SPECIALS.sub(r"\\\1", value)
+def as_text(value: str | None, *, keep_lines: bool = False) -> str:
+    """利用者が入れた文字列を、Markdown として解釈されない形にする。
+
+    keep_lines を指定すると、改行を Markdown の改行として残す（メモなど複数行の欄）。
+    """
+    if not value:
+        return ""
+    text = _MARKDOWN_SPECIALS.sub(r"\\\1", value).replace(":", "&#58;")
+    text = _LEADING_SPACE.sub(lambda m: "&#32;" * len(m.group(0)), text)
+    return text.replace("\n", "  \n") if keep_lines else text
+
+
+# 直前のバックスラッシュの並びも一緒に取る。数を見ないと、`\![` のようにすでに
+# 無害な記法へ `\` を足して `\\![`（文字の \ ＋画像）に変えてしまう
+_IMAGE_SYNTAX = re.compile(r"(\\*)!\[")
+
+
+def _escape_image(match: re.Match[str]) -> str:
+    backslashes = match.group(1)
+    if len(backslashes) % 2:  # 奇数個なら `!` はすでにエスケープされている
+        return match.group(0)
+    return backslashes + "\\!["
+
+
+def without_images(text: str) -> str:
+    """AI の出力を描画する前に、画像の記法だけを無効にする。
+
+    見出しや箇条書きは読みやすさのため Markdown のまま描画したい。ただし画像の記法は
+    描画した時点で外部の URL を読みに行くため、`!` をエスケープして文字として出す。
+    """
+    return _IMAGE_SYNTAX.sub(_escape_image, text)
 
 
 def with_saved(options: list[str], value: str) -> tuple[list[str], int]:
@@ -101,6 +136,18 @@ def show_flash() -> None:
         getattr(st, kind)(message)
 
 
+def form_key(name: str) -> str:
+    """追加フォームのキー。保存に成功したときだけ変えて、入力欄を空で作り直す。
+
+    `clear_on_submit` は検証や保存に失敗したときも入力を消してしまうため使わない。
+    """
+    return f"{name}:{st.session_state.get(f'{name}_round', 0)}"
+
+
+def reset_form(name: str) -> None:
+    st.session_state[f"{name}_round"] = st.session_state.get(f"{name}_round", 0) + 1
+
+
 def run_write(action, success: str | None = None) -> bool:
     """書き込みを実行し、失敗したら利用者に伝わる文面にして返す。"""
     try:
@@ -110,11 +157,12 @@ def run_write(action, success: str | None = None) -> bool:
     except ConnectionLostError as error:
         # 次の再描画で接続を張り直せるように、死んだ接続は手放す
         st.session_state.pop("db", None)
-        st.error(f"保存できませんでした: {error}")
+        st.error(f"保存できませんでした: {as_text(str(error))}")
     except DatabaseError as error:
-        st.error(f"保存できませんでした: {error}")
+        st.error(f"保存できませんでした: {as_text(str(error))}")
     except ValueError as error:
-        st.error(str(error))
+        # 文面には利用者の入れた値（企業名・古い選択肢の値など）が入るので、エスケープする
+        st.error(as_text(str(error)))
     else:
         if success:
             flash(success)
@@ -173,6 +221,21 @@ if page == "ダッシュボード":
     else:
         st.success("7日以内の締切はありません。")
 
+    if summary.left_behind:
+        with st.expander(f"落選・辞退した企業に残っている締切（{len(summary.left_behind)} 件）"):
+            st.caption(
+                "落選・辞退のあとに、選考中のまま残っているステップです。上の件数には数えていません。"
+                "続いている選考（辞退したインターンのあとの本選考など）なら、企業管理で結果を見直してください。"
+                "不要なら、ステップを削除するか結果を「辞退」にすると消えます。"
+            )
+            for deadline in summary.left_behind:
+                step = deadline.step
+                st.write(
+                    f"**{as_text(step.company_name)}** — {as_text(step.name)}"
+                    f"（締切 {step.deadline}）: "
+                    + (f"{-deadline.days_left}日超過" if deadline.overdue else f"あと{deadline.days_left}日")
+                )
+
     st.subheader("選考状況一覧")
     if summary.companies:
         rows = [
@@ -197,7 +260,7 @@ elif page == "企業管理":
     st.title("企業管理")
     companies = selection.companies()
 
-    with st.expander("企業を追加", expanded=not companies), st.form("add_company", clear_on_submit=True):
+    with st.expander("企業を追加", expanded=not companies), st.form(form_key("add_company")):
         name = st.text_input("企業名 *")
         c1, c2, c3 = st.columns(3)
         industry = c1.selectbox("業界", constants.INDUSTRIES)
@@ -228,17 +291,33 @@ elif page == "企業管理":
                 ),
                 success=f"「{as_text(name.strip())}」を追加しました。",
             ):
+                reset_form("add_company")
                 st.rerun()
 
     if not companies:
         st.stop()
 
-    selected = st.selectbox("企業を選択", companies, format_func=lambda c: f"{c.name}（{c.priority}）")
-    company_id = selected.id or -1
+    # 選択は企業の ID で持つ。企業そのものを選択肢にすると、表示文字列（企業名・志望度）を
+    # 更新したときに別の欄とみなされ、先頭の企業に戻ってしまう
+    company_by_id = {c.id or -1: c for c in companies}
+    # キーを付けた選択欄の状態は、描画されなかった実行（別のページを開いている間）に
+    # Streamlit が捨てる。選んでいた企業を別のキーに控え、戻ってきたときに復元する
+    kept = st.session_state.get("company_kept")
+    if "company_selected" not in st.session_state and kept in company_by_id:
+        st.session_state["company_selected"] = kept
+    company_id = st.selectbox(
+        "企業を選択",
+        list(company_by_id),
+        format_func=lambda cid: f"{company_by_id[cid].name}（{company_by_id[cid].priority}）",
+        key="company_selected",
+    )
+    selected = company_by_id[company_id]
+    st.session_state["company_kept"] = company_id
     # 一覧と状況の両方をこの1回の問い合わせで賄う
     steps = selection.steps_by_company().get(company_id, [])
     status = analytics.company_status(steps)
-    st.markdown(f"### {as_text(selected.name)} — {status}")
+    # 状況の文言にはステップ名が入る（「1次面接待ち」など）ので、これもエスケープする
+    st.markdown(f"### {as_text(selected.name)} — {as_text(status)}")
 
     if selected.mypage_url:
         if selected.mypage_url.startswith(("http://", "https://")):
@@ -247,7 +326,7 @@ elif page == "企業管理":
             st.caption(f"マイページURL: {as_text(selected.mypage_url)}")
         st.caption(f"登録メール: {as_text(selected.login_email) or '未設定'}")
     if selected.memo:
-        st.caption(as_text(selected.memo))
+        st.caption(as_text(selected.memo, keep_lines=True))
 
     with st.expander("企業研究リンク（公式・新卒採用・事業内容・IR・クチコミ・選考体験記・ニュース）"):
         links = research.research_links(selected.name)
@@ -272,13 +351,13 @@ elif page == "企業管理":
     st.session_state["steps_shown"] = now_shown
 
     with st.form("edit_steps"):
-        edited: list[tuple[int, date | None, str, str | None, str]] = []
+        edited: list[tuple[int, date | None, bool, str, str | None, str]] = []
         for step in steps:
             rendered_deadline = analytics.parse_date(step.deadline)
             # DB の値をキーに含める。別のタブや端末で更新されたとき、
             # 古い入力欄の値が残って上書きするのを防ぐため。
             token = f"{step.id}:{step.deadline}:{step.result}"
-            c1, c2, c3 = st.columns([3, 2, 2])
+            c1, c2, c3, c4 = st.columns([3, 2, 1, 2])
             c1.write(f"**{as_text(step.name)}**")
             new_deadline = c2.date_input(
                 "締切",
@@ -287,15 +366,20 @@ elif page == "企業管理":
                 format="YYYY-MM-DD",
                 label_visibility="collapsed",
             )
+            # 日付の入力欄は、初期値が空のときしか空に戻せない（Streamlit の仕様）。
+            # 保存済みの締切を消す手段として、締切がある行にだけ別のチェックを置く
+            clear_deadline = bool(step.deadline) and c3.checkbox("締切を消す", key=f"dlclear:{token}")
             result_options, result_index = with_saved(constants.STEP_RESULTS, step.result)
-            new_result = c3.selectbox(
+            new_result = c4.selectbox(
                 "結果",
                 result_options,
                 index=result_index,
                 key=f"rs:{token}",
                 label_visibility="collapsed",
             )
-            edited.append((step.id or -1, new_deadline, new_result, step.deadline, step.result))
+            edited.append(
+                (step.id or -1, new_deadline, clear_deadline, new_result, step.deadline, step.result)
+            )
 
         if st.form_submit_button("選考ステップを保存", type="primary"):
             # 押した時点の表示と、いま読み直した値を突き合わせる。ずれている行は
@@ -305,15 +389,19 @@ elif page == "企業管理":
                 1 for step_id, shown in previously_shown.items() if now_shown.get(step_id) != shown
             )
             changes: list[StepChange] = []
-            for step_id, new_deadline, new_result, old_deadline, old_result in edited:
+            for step_id, new_deadline, clear_deadline, new_result, old_deadline, old_result in edited:
                 rendered = analytics.parse_date(old_deadline)
                 # 表示していた値と違うものだけを書く。読めない締切に
                 # 触っていない場合は、空欄に見えていても書き換えない。
-                deadline_change = (
-                    (new_deadline.isoformat() if new_deadline else None)
-                    if new_deadline != rendered
-                    else UNSET
-                )
+                # 「締切を消す」を付けた行は、日付の入力欄の値にかかわらず空にする
+                if clear_deadline:
+                    deadline_change = None
+                else:
+                    deadline_change = (
+                        (new_deadline.isoformat() if new_deadline else None)
+                        if new_deadline != rendered
+                        else UNSET
+                    )
                 result_change = new_result if new_result != old_result else UNSET
                 if deadline_change is not UNSET or result_change is not UNSET:
                     changes.append(StepChange(step_id, deadline=deadline_change, result=result_change))
@@ -333,7 +421,7 @@ elif page == "企業管理":
                     flash("変更はありませんでした。", "info")
                 st.rerun()
 
-    with st.form("add_step", clear_on_submit=True):
+    with st.form(form_key("add_step")):
         c1, c2 = st.columns([3, 1])
         step_name = c1.text_input("ステップを追加（例: 3次面接、リクルーター面談）")
         if c2.form_submit_button("追加"):
@@ -343,6 +431,7 @@ elif page == "企業管理":
                 lambda: selection.add_step(company_id, step_name),
                 success=f"「{as_text(step_name.strip())}」を追加しました。",
             ):
+                reset_form("add_step")
                 st.rerun()
 
     with st.expander("不要なステップを削除"):
@@ -416,13 +505,15 @@ elif page == "ES管理":
     st.caption("一度書いた回答をカテゴリで整理し、文字数制限と照らして管理します。")
 
     companies = selection.companies()
-    company_options: dict[str, int | None] = {"（汎用）": None}
-    company_options.update({c.name: c.id for c in companies})
+    # 選択肢は企業の ID（汎用は None）。名前を鍵にすると、「（汎用）」という名前の企業や
+    # 同名の企業で選択肢が上書きされる
+    company_names: dict[int | None, str] = {None: "（汎用）"}
+    company_names.update({c.id: c.name for c in companies})
 
-    with st.expander("設問・回答を追加"), st.form("add_es", clear_on_submit=True):
+    with st.expander("設問・回答を追加"), st.form(form_key("add_es")):
         c1, c2, c3 = st.columns([2, 2, 1])
         category = c1.selectbox("カテゴリ", constants.ES_CATEGORIES)
-        company_name = c2.selectbox("企業", list(company_options))
+        target_company = c2.selectbox("企業", list(company_names), format_func=company_names.__getitem__)
         char_limit = c3.number_input("文字数制限", min_value=0, value=400, step=50)
         question = st.text_input("設問文")
         answer_text = st.text_area("回答", height=200)
@@ -434,13 +525,14 @@ elif page == "ES管理":
                     EsAnswer(
                         question=question,
                         category=category,
-                        company_id=company_options[company_name],
+                        company_id=target_company,
                         char_limit=int(char_limit) or None,
                         answer=answer_text,
                     )
                 ),
                 success="保存しました。",
             ):
+                reset_form("add_es")
                 st.rerun()
 
     all_answers = es.answers()
@@ -555,7 +647,7 @@ elif page == "添削":
     provider = providers[provider_names.index(provider_name)]
     note = st.text_input("補足（任意）", placeholder="例: 文字数を削る方向で見てほしい")
 
-    resolved_industry = None if industry == "指定なし" else industry
+    resolved_industry = NO_INDUSTRY if industry == "指定なし" else industry
     criteria = reviewer.criteria_for(resolved_industry)
     check = es.length_check(target.answer, target.char_limit)
 
@@ -607,7 +699,12 @@ elif page == "添削":
             if not review.applies_to(target.answer):
                 label += "  ※この所見のあとに本文が変わっています"
             with st.expander(label):
-                st.markdown(review.result)
+                if review.model is None:
+                    # 通信しない実行先の結果は依頼文そのもの。提出先・設問・補足が入るので
+                    # Markdown として描画せず、書き出したとおりに見せる
+                    st.code(review.result, language="markdown")
+                else:
+                    st.markdown(without_images(review.result))
                 c1, c2 = st.columns([1, 5])
                 c2.download_button(
                     "この所見を保存",
@@ -641,16 +738,24 @@ elif page == "分析":
     def rate_frame(attribute: str, label: str) -> pd.DataFrame:
         rates = analytics.pass_rate_by(all_steps, attribute, step_name=target_step)
         return pd.DataFrame(
-            [{label: r.group, "通過": r.passed, "落選": r.failed, "通過率": f"{r.rate:.0%}"} for r in rates]
+            [{label: r.group, "通過": r.passed, "落選": r.failed, "通過率": r.rate} for r in rates]
         )
 
+    # 通過率は数値のまま渡し、表示だけを百分率にする。文字列にすると、見出しで
+    # 並べ替えたときに "100%" < "33%" < "7%" の辞書順になる
+    rate_columns = {"通過率": st.column_config.NumberColumn("通過率", format="percent")}
+    st.caption(f"{analytics.PASS_RATE_UNIT}。対象ステップを選ぶと、そのステップだけの通過率になる。")
     c1, c2 = st.columns(2)
     with c1:
-        st.subheader("応募経路別の通過率")
-        st.dataframe(rate_frame("route", "応募経路"), width="stretch", hide_index=True)
+        st.subheader("応募経路別のステップ通過率")
+        st.dataframe(
+            rate_frame("route", "応募経路"), width="stretch", hide_index=True, column_config=rate_columns
+        )
     with c2:
-        st.subheader("適性検査タイプ別の通過率")
-        st.dataframe(rate_frame("test_type", "適性検査"), width="stretch", hide_index=True)
+        st.subheader("適性検査タイプ別のステップ通過率")
+        st.dataframe(
+            rate_frame("test_type", "適性検査"), width="stretch", hide_index=True, column_config=rate_columns
+        )
 
     st.subheader("選考ファネル")
     funnel_rows = analytics.funnel(all_steps, constants.DEFAULT_STEPS)
@@ -668,13 +773,23 @@ elif page == "分析":
     ).set_index("選考ステップ")
     # st.bar_chart は軸を辞書順に並べてしまうため、Altair で選考順に固定する
     melted = frame.reset_index().melt("選考ステップ", var_name="結果", value_name="件数")
+    # 目盛りは整数だけを明示する。tickMinStep だけだと件数が少ないときに 0.5 刻みの
+    # 目盛りが format="d" で丸められ、「0, 1, 1」のように同じ数字が並ぶ
+    longest = int(frame.sum(axis=1).max()) if len(frame) else 0
+    tick_step = max(1, -(-longest // 10))  # 目盛りが 10 本程度に収まる刻み
+    ticks = list(range(0, longest + tick_step, tick_step))
     chart = (
         alt.Chart(melted)
         .mark_bar()
         .encode(
             # labelLimit=0 で上限を外す。既定の幅では長いステップ名が「…」で切れる
             y=alt.Y("選考ステップ", sort=list(frame.index), title=None, axis=alt.Axis(labelLimit=0)),
-            x=alt.X("件数", title="件数", axis=alt.Axis(tickMinStep=1, format="d")),
+            x=alt.X(
+                "件数",
+                title="件数",
+                scale=alt.Scale(domain=[0, ticks[-1]], nice=False),
+                axis=alt.Axis(values=ticks, format="d"),
+            ),
             color=alt.Color(
                 "結果",
                 scale=alt.Scale(

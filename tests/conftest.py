@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 
@@ -36,6 +39,27 @@ def _drop_schema(schema: str) -> None:
 
     with psycopg.connect(POSTGRES_DSN, autocommit=True) as admin:
         admin.execute(f'DROP SCHEMA "{schema}" CASCADE')
+
+
+@contextmanager
+def shared_target(tmp_path: Path) -> Iterator[str]:
+    """複数の接続から開ける保存先を用意する。セッションの同時実行を再現するときに使う。
+
+    SQLite は1つのファイル、PostgreSQL は専用のスキーマを指す接続文字列を返す。
+    """
+    if not POSTGRES_DSN:
+        yield str(tmp_path / "shared.db")
+        return
+    import psycopg
+
+    schema = f"t{uuid.uuid4().hex[:12]}"
+    with psycopg.connect(POSTGRES_DSN, autocommit=True) as admin:
+        admin.execute(f'CREATE SCHEMA "{schema}"')
+    separator = "&" if "?" in str(POSTGRES_DSN) else "?"
+    try:
+        yield f"{POSTGRES_DSN}{separator}options=-csearch_path%3D{schema}"
+    finally:
+        _drop_schema(schema)
 
 
 @pytest.fixture

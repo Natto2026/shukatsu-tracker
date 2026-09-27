@@ -123,6 +123,8 @@ class TestSharedConnection:
             thread.start()
         for thread in threads:
             thread.join(timeout=15)
+        # join は時間切れでも黙って返る。終わっていないスレッドがあれば、止まったとみなして落とす
+        assert not any(thread.is_alive() for thread in threads)
 
         assert errors == []
         # A は失敗したので残らない。B は確定しているので必ず残る。
@@ -150,6 +152,8 @@ class TestSharedConnection:
             thread.start()
         for thread in threads:
             thread.join(timeout=60)
+        # join は時間切れでも黙って返る。終わっていないスレッドがあれば、止まったとみなして落とす
+        assert not any(thread.is_alive() for thread in threads)
 
         assert errors == []
         assert len(company_names(conn)) == per_thread * thread_count
@@ -171,6 +175,8 @@ class TestSharedConnection:
             thread.start()
         for thread in threads:
             thread.join(timeout=60)
+        # join は時間切れでも黙って返る。終わっていないスレッドがあれば、止まったとみなして落とす
+        assert not any(thread.is_alive() for thread in threads)
 
         assert errors == []
         service = SelectionService(conn)

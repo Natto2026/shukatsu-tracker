@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from .. import analytics, constants
 from ..db import CompanyRepository, Database, DuplicateKeyError, StepRepository, transaction
 from ..models import Company, Step
+from .selection import check_single_line
 
 # 見出しの別名。左が取り込み先の項目、右が受け付ける見出し（先頭が標準の名前）。
 HEADER_ALIASES: dict[str, tuple[str, ...]] = {
@@ -266,6 +267,12 @@ def _map_columns(header: list[str], records: list[list[str]]) -> tuple[dict[str,
 
 def _validate(line: int, cells: dict[str, str]) -> tuple[_Row | None, str | None]:
     """1行を検証する。問題があれば（None, 理由）。"""
+    # 引用符で囲んだ欄には改行を書けるため、画面から入らない名前もここから入りうる
+    for field_name, label in (("name", "企業名"), ("step", "ステップ名")):
+        try:
+            check_single_line(cells.get(field_name, ""), label)
+        except ValueError as error:
+            return None, str(error)
     company_values: dict[str, str] = {}
     for field_name in _COMPANY_FIELDS:
         value = cells.get(field_name, "")

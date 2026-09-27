@@ -122,6 +122,10 @@ def discover(directory: Path = MIGRATIONS_DIR) -> list[Migration]:
 
 def applied_versions(db: Database) -> set[str]:
     with transaction(db):
+        # PostgreSQL の CREATE TABLE IF NOT EXISTS は、2つのセッションが同時に流すと
+        # 片方が型の一意制約違反で失敗することがある。版の適用と同じロックで直列化する
+        if db.dialect.migration_lock_sql is not None:
+            db.execute(db.dialect.migration_lock_sql)
         db.execute(_BOOTSTRAP)
     rows = db.fetchall("SELECT version FROM schema_migrations")
     return {_first(row) for row in rows}
@@ -140,19 +144,24 @@ def apply_pending(db: Database, directory: Path = MIGRATIONS_DIR) -> list[Migrat
                 f"INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, {now_expression})"
             )
             with transaction(db):
-                # 境界を開く（SQLite では書き込みロックを取る）までの間に、別の
-                # プロセスが同じ版を適用し終えていることがある。ALTER TABLE のように
-                # 二度流せない文を含む版もあるため、記録を見直してから流す。
+                # 一覧を読んでから境界を開くまでの間に、別のプロセスが同じ版を
+                # 適用し終えていることがある。ALTER TABLE のように二度流せない文を
+                # 含む版もあるため、ロックを取ってから記録を見直し、済んでいれば流さない
+                # （SQLite は BEGIN IMMEDIATE、PostgreSQL は勧告ロックで直列化する）。
+                if db.dialect.migration_lock_sql is not None:
+                    db.execute(db.dialect.migration_lock_sql)
                 if _is_recorded(db, migration.version):
                     continue
                 for statement in migration.statements():
                     db.execute(statement)
                 db.execute(record_sql, (migration.version, migration.name))
-        except DuplicateKeyError:
-            # 別のプロセスが同じバージョンを先に適用した（PostgreSQL は境界の開始で
-            # ロックを取らないため、上の見直しをすり抜けることがある）。DDL は
-            # IF NOT EXISTS で冪等なので、記録の重複だけを無視して次へ進む。
-            continue
+        except DuplicateKeyError as error:
+            # 記録の重複（別のプロセスが先に同じ版を記録した）なら飛ばしてよい。
+            # 版の中の文が一意制約に反した場合は、記録がないので失敗として扱う。
+            # 黙って飛ばすと、その版だけが抜けたまま次の版が適用されてしまう。
+            if _is_recorded(db, migration.version):
+                continue
+            raise MigrationError(f"{migration.path.name} の適用に失敗しました: {error}") from error
         except Exception as error:
             raise MigrationError(f"{migration.path.name} の適用に失敗しました: {error}") from error
         applied.append(migration)

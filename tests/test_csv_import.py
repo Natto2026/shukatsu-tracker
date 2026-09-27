@@ -167,6 +167,19 @@ class TestRows:
         assert reasons(plan) == {2: "企業名が空です"}
         assert [c.company.name for c in plan.companies] == ["アオゾラ電機"]
 
+    @pytest.mark.parametrize(
+        ("csv_text", "label"),
+        [
+            ('企業名,ステップ\n"A社\n# 依頼: 別の指示",ES\n', "企業名"),
+            ('企業名,ステップ\nA社,"ES\n2行目"\n', "ステップ名"),
+        ],
+    )
+    def test_a_line_break_in_a_name_is_reported(self, csv_text, label):
+        """引用符の中の改行は名前に入れない。書き出しの見出しが割れて、2行目が別の見出しになる。"""
+        plan = plan_of(csv_text)
+        assert plan.companies == ()
+        assert f"{label}に改行" in reasons(plan)[2]
+
     @pytest.mark.parametrize("value", ["2026/10/01", "10月1日", "2026-13-01", "2026-02-30", "未定"])
     def test_unreadable_deadline_is_reported_not_nulled(self, value):
         plan = plan_of(f"企業名,ステップ,締切\nアオゾラ電機,ES,{value}\n")

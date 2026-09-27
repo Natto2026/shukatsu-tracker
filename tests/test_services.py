@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from datetime import date, timedelta
 
 import pytest
+from conftest import shared_target
 
-from shukatsu_tracker import constants
-from shukatsu_tracker.db import DatabaseError, DuplicateKeyError, StepRepository
+from shukatsu_tracker import constants, db
+from shukatsu_tracker.db import DatabaseError, DuplicateKeyError, EsAnswerRepository, StepRepository
 from shukatsu_tracker.models import Company, EsAnswer
-from shukatsu_tracker.services import StaleAnswerError, StepChange
+from shukatsu_tracker.services import EsService, StaleAnswerError, StepChange
 
 
 def days_from_today(offset: int) -> str:
@@ -44,6 +47,32 @@ class TestAddCompany:
 
 class TestCompanyValidation:
     """選択肢と書式の検証がサービス層にあること（画面や CSV だけに置かない）。"""
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "A社\n# 見出し",
+            "A社\tB",
+            "A\r社",
+            "A社\u2028## 見出し",  # 行区切り（多くの処理が改行とみなす）
+            "ABC\u200b",  # ゼロ幅空白。見た目が「ABC」と同じ別の名前になる
+            "\u200b",  # 見えない名前
+            "A\u202e社",  # 表示方向の反転
+        ],
+    )
+    def test_a_company_name_with_control_characters_is_rejected(self, selection, name):
+        with pytest.raises(ValueError, match="制御文字"):
+            selection.add_company(Company(name=name), with_default_steps=False)
+
+    def test_renaming_to_a_multi_line_name_is_rejected(self, selection):
+        company_id = selection.add_company(Company(name="A社"), with_default_steps=False)
+        with pytest.raises(ValueError, match="制御文字"):
+            selection.update_company(company_id, name="A社\n2行目")
+
+    def test_a_step_name_with_a_line_break_is_rejected(self, selection):
+        company_id = selection.add_company(Company(name="A社"), with_default_steps=False)
+        with pytest.raises(ValueError, match="制御文字"):
+            selection.add_step(company_id, "ES\n2行目")
 
     @pytest.mark.parametrize(
         ("field", "value", "label"),
@@ -237,6 +266,21 @@ class TestDashboard:
         assert [d.step.company_name for d in summary.deadlines] == ["継続中株式会社"]
         assert summary.overdue == []
 
+    def test_a_deadline_left_in_an_ended_company_is_kept_aside_not_dropped(self, selection):
+        """落選・辞退した企業に残った締切は、件数に数えず、消さずに別に返す。
+
+        辞退したインターンのあとに足した本選考の締切が、黙って消えないように。
+        """
+        company_id = selection.add_company(Company(name="テスト株式会社"), with_default_steps=False)
+        intern = selection.add_step(company_id, "夏インターン")
+        selection.update_step(intern, result="辞退")
+        selection.add_step(company_id, "本選考ES", deadline=days_from_today(-1))
+
+        summary = selection.dashboard(date.today())
+        assert summary.overdue == []
+        assert summary.upcoming == []
+        assert [d.step.name for d in summary.left_behind] == ["本選考ES"]
+
     def test_overdue_is_separated(self, selection):
         company_id = selection.add_company(Company(name="テスト株式会社"), with_default_steps=False)
         selection.add_step(company_id, "ES", deadline=days_from_today(-2))
@@ -280,6 +324,62 @@ class TestEsService:
         stored = es.answer(answer_id)
         assert stored is not None
         assert stored.answer == "第二稿"
+
+    def test_two_sessions_saving_from_the_same_text_do_not_both_win(self, tmp_path, monkeypatch):
+        """同じ本文を表示していた2つのセッションが同時に保存しても、両方は通らないこと。
+
+        PostgreSQL では判定の読み取りが行をロックしておらず、両方が「表示どおり」と
+        判定して、後から書いた方が先の保存を黙って潰していた。
+        """
+        with shared_target(tmp_path) as target:
+            setup = db.connect(target)
+            answer_id = EsService(setup).add(EsAnswer(question="志望動機", answer="初稿"))
+            setup.close()
+
+            # 判定から書き込みまでの間を広げ、相手の判定が割り込める並びを作る
+            original = EsAnswerRepository.update
+
+            def slow_update(repository, *args, **kwargs):
+                time.sleep(0.5)
+                original(repository, *args, **kwargs)
+
+            monkeypatch.setattr(EsAnswerRepository, "update", slow_update)
+            sessions = [db.connect(target) for _ in range(2)]
+            start = threading.Barrier(2)
+            saved: list[str] = []
+            refused: list[str] = []
+            errors: list[BaseException] = []
+
+            def save(database, text: str) -> None:
+                start.wait()
+                try:
+                    EsService(database).update_text(answer_id, text, expected="初稿")
+                    saved.append(text)
+                except StaleAnswerError:
+                    refused.append(text)
+                except BaseException as error:  # pragma: no cover - 失敗時の診断用
+                    errors.append(error)
+
+            threads = [
+                threading.Thread(target=save, args=(session, text))
+                for session, text in zip(sessions, ["タブAの編集", "タブBの編集"], strict=True)
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=30)
+            assert not any(thread.is_alive() for thread in threads)
+            for session in sessions:
+                session.close()
+
+            assert errors == []
+            assert len(saved) == 1
+            assert len(refused) == 1
+            check = db.connect(target)
+            stored = EsService(check).answer(answer_id)
+            check.close()
+            assert stored is not None
+            assert stored.answer == saved[0]
 
     def test_update_writes_when_the_shown_text_is_still_current(self, es):
         answer_id = es.add(EsAnswer(question="志望動機", answer="初稿"))

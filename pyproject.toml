@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shukatsu-tracker"
-version = "0.9.0"
+version = "0.10.0"
 description = "就活の選考状況をローカルで一元管理・分析するツール"
 readme = "README.md"
 license = "MIT"
@@ -24,7 +24,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.10"]
-# 通信する評価先を使う場合だけ必要。既定の書き出しのみなら不要。
+# 通信する実行先（Claude API）を使う場合だけ必要。既定の書き出しのみなら不要。
 llm = ["anthropic>=1.0"]
 # サーバー型の DB を使う場合だけ必要。既定の SQLite なら不要。
 postgres = ["psycopg[binary]>=3.2"]

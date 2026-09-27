@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import types
 from dataclasses import dataclass
@@ -230,7 +231,7 @@ class TestErrorTranslation:
         assert "2行目" not in str(caught.value)
 
     def test_timeout_reports_the_limit(self, sdk):
-        with pytest.raises(ReviewError, match="120 秒以内"):
+        with pytest.raises(ReviewError, match="300 秒以内"):
             self._review(sdk.APITimeoutError("timed out"))
 
     def test_connection_failure_is_explained(self, sdk):
@@ -278,3 +279,79 @@ class TestAvailableProviders:
         monkeypatch.setenv(API_KEY_ENV, "dummy")
         providers = available_providers()
         assert [p.sends_data_externally for p in providers] == [False, True]
+
+
+class TestWithTheRealSdk:
+    """本物の SDK を、通信だけ差し替えて通す。
+
+    上の検証は偽の SDK を差し込むため、引数名（`betas`・`fallbacks`）や例外の型が
+    実際の SDK と食い違っても気づけない。SDK が入っている環境（CI の llm 入りのジョブ）
+    でだけ走らせる。
+    """
+
+    @pytest.fixture
+    def sdk(self):
+        return pytest.importorskip("anthropic")
+
+    @staticmethod
+    def client_answering(sdk, handler):
+        import httpx2
+
+        return sdk.Anthropic(
+            api_key="test-key",
+            base_url="http://api.test",
+            max_retries=0,
+            http_client=sdk.DefaultHttpxClient(transport=httpx2.MockTransport(handler)),
+        )
+
+    def test_the_request_is_accepted_and_the_answer_is_read(self, sdk):
+        import httpx2
+
+        seen: list[httpx2.Request] = []
+
+        def handler(request):
+            seen.append(request)
+            return httpx2.Response(
+                200,
+                json={
+                    "id": "msg_test",
+                    "type": "message",
+                    "role": "assistant",
+                    "model": "claude-opus-5",
+                    "content": [{"type": "text", "text": "所見の本文"}],
+                    "stop_reason": "end_turn",
+                    "stop_sequence": None,
+                    "usage": {"input_tokens": 12, "output_tokens": 34},
+                },
+            )
+
+        result = AnthropicProvider(self.client_answering(sdk, handler)).review(REQUEST, PROMPT)
+
+        assert result.text == "所見の本文"
+        assert (result.input_tokens, result.output_tokens) == (12, 34)
+        (request,) = seen
+        body = json.loads(request.content)
+        assert body["fallbacks"] == "default"
+        assert body["messages"] == [{"role": "user", "content": PROMPT}]
+        assert "server-side-fallback-2026-07-01" in request.headers["anthropic-beta"]
+
+    def test_a_status_error_is_translated(self, sdk):
+        import httpx2
+
+        def handler(request):
+            return httpx2.Response(
+                404,
+                json={"type": "error", "error": {"type": "not_found_error", "message": "model: typo"}},
+            )
+
+        with pytest.raises(ReviewError, match="404"):
+            AnthropicProvider(self.client_answering(sdk, handler)).review(REQUEST, PROMPT)
+
+    def test_a_timeout_is_translated(self, sdk):
+        import httpx2
+
+        def handler(request):
+            raise httpx2.ReadTimeout("timed out", request=request)
+
+        with pytest.raises(ReviewError, match="秒以内に応答がありませんでした"):
+            AnthropicProvider(self.client_answering(sdk, handler)).review(REQUEST, PROMPT)
