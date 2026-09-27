@@ -40,14 +40,20 @@ _COMPANY_LABELS = {"industry": "業界", "priority": "志望度", "route": "応�
 _TRIMMED = ("name", "mypage_url", "login_email")
 
 
+# 名前に使わせない文字の種類。Cc は改行・タブなどの制御文字、Zl・Zp は行区切り・段落区切り
+# （U+2028・U+2029。多くの処理が改行とみなす）、Cf はゼロ幅文字や表示方向の制御（RLO）など
+_INVISIBLE_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
+
+
 def check_single_line(value: str, label: str) -> None:
-    """企業名・ステップ名に、改行やタブなどの制御文字がないことを確かめる。
+    """企業名・ステップ名に、改行や見えない文字がないことを確かめる。
 
     一覧・見出し・書き出しの Markdown はどれも名前が1行であることを前提にしている。
-    改行が入ると見出しが割れ、2行目が別の見出しや指示として読まれてしまう。
+    改行が入ると見出しが割れ、2行目が別の見出しや指示として読まれてしまう。ゼロ幅文字は
+    見た目が同じ別の名前を作れるため（「ABC」と「ABC＋ゼロ幅空白」）、これも拒否する。
     """
-    if any(unicodedata.category(char) == "Cc" for char in value):
-        raise ValueError(f"{label}に改行やタブなどの制御文字は使えません")
+    if any(unicodedata.category(char) in _INVISIBLE_CATEGORIES for char in value):
+        raise ValueError(f"{label}に改行・タブ・ゼロ幅文字などの見えない制御文字は使えません")
 
 
 def _validated_company_fields(fields: Mapping[str, object]) -> dict[str, Any]:

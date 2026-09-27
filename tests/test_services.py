@@ -48,7 +48,18 @@ class TestAddCompany:
 class TestCompanyValidation:
     """選択肢と書式の検証がサービス層にあること（画面や CSV だけに置かない）。"""
 
-    @pytest.mark.parametrize("name", ["A社\n# 見出し", "A社\tB", "A\r社"])
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "A社\n# 見出し",
+            "A社\tB",
+            "A\r社",
+            "A社\u2028## 見出し",  # 行区切り（多くの処理が改行とみなす）
+            "ABC\u200b",  # ゼロ幅空白。見た目が「ABC」と同じ別の名前になる
+            "\u200b",  # 見えない名前
+            "A\u202e社",  # 表示方向の反転
+        ],
+    )
     def test_a_company_name_with_control_characters_is_rejected(self, selection, name):
         with pytest.raises(ValueError, match="制御文字"):
             selection.add_company(Company(name=name), with_default_steps=False)
