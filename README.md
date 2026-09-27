@@ -244,9 +244,10 @@ python -m pytest --cov         # 網羅率も見る場合（CI でも出力し�
 `-m "not ui"` で外せる。PR の前と CI では全部を回す。
 
 CI では Python 3.11 / 3.12 / 3.13 の SQLite に加えて、同じテスト一式を実際の
-PostgreSQL に対しても走らせている。依存は `constraints.txt` の版に固定しているので、
-上流の更新で CI が勝手に赤くなることはない。上げるときは手元で全部通してから
-`constraints.txt` を書き換える。
+PostgreSQL に対しても走らせている。直接の依存は `constraints.txt` の版に固定しているので、
+streamlit や ruff の更新で CI が勝手に赤くなることはない。上げるときは手元で全部通してから
+`constraints.txt` を書き換える。間接の依存（numpy・pyarrow など）は固定していないため、
+それらの更新で落ちた場合は、原因の版を `constraints.txt` に足して止める。
 
 ```bash
 # 手元で PostgreSQL に対して走らせる場合
@@ -254,4 +255,6 @@ SHUKATSU_TEST_DSN=postgresql://user:pass@127.0.0.1:5432/shukatsu_test python -m 
 ```
 
 通信を伴うテストはない。API を呼ぶ実行先は、差し込んだ偽のクライアントに対して
-「何を送るか」「応答をどう解釈するか」だけを検証している。
+「何を送るか」「応答をどう解釈するか」だけを検証している。加えて、SDK が入っている環境
+（CI の SQLite のジョブ）では、本物の SDK を通信だけ差し替えて通し、引数名や例外の型が
+実際の SDK と食い違っていないことを確かめる。
