@@ -566,6 +566,38 @@ class TestCsvImport:
         assert stored == {"アオゾラ電機": "先に登録", "コダマ製作所": ""}
 
 
+class TestReviewIndustry:
+    def test_choosing_no_industry_is_what_gets_sent_and_saved(self, app_db):
+        """提出先が金融でも「指定なし」を選べば、金融の観点を足さずに送り、そのとおり残すこと。
+
+        画面の観点表は共通の観点だけなのに、送る文面は提出先の業界に戻っていた。
+        """
+        database = open_db(app_db)
+        try:
+            company_id = SelectionService(database).add_company(
+                Company(name="テスト株式会社", industry="金融"), with_default_steps=False
+            )
+            answer_id = EsService(database).add(
+                EsAnswer(question="志望動機", answer="本文", company_id=company_id)
+            )
+        finally:
+            database.close()
+        at = open_page(app_db, "添削")
+        industry = [s for s in at.selectbox if s.label == "観点を寄せる業界"][0]
+        assert industry.value == "金融"
+        industry.set_value("指定なし").run()
+        [b for b in at.button if b.label == "所見を取る"][0].click().run()
+        assert not at.exception, at.exception
+
+        database = open_db(app_db)
+        try:
+            (review,) = ReviewService(database).history(answer_id)
+        finally:
+            database.close()
+        assert review.industry == ""
+        assert "数字と根拠の確かさ" not in review.prompt
+
+
 class TestLabels:
     def test_review_page_title_matches_the_menu(self, app_db):
         """添削のページの題が、メニューの項目名とずれていないこと。"""

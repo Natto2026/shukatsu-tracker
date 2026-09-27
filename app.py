@@ -30,6 +30,7 @@ from shukatsu_tracker.models import Company, EsAnswer
 from shukatsu_tracker.review import ReviewError
 from shukatsu_tracker.review.providers import available_providers
 from shukatsu_tracker.services import (
+    NO_INDUSTRY,
     UNSET,
     CsvFormatError,
     CsvImportService,
@@ -555,7 +556,7 @@ elif page == "添削":
     provider = providers[provider_names.index(provider_name)]
     note = st.text_input("補足（任意）", placeholder="例: 文字数を削る方向で見てほしい")
 
-    resolved_industry = None if industry == "指定なし" else industry
+    resolved_industry = NO_INDUSTRY if industry == "指定なし" else industry
     criteria = reviewer.criteria_for(resolved_industry)
     check = es.length_check(target.answer, target.char_limit)
 

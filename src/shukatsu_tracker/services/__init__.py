@@ -2,7 +2,7 @@
 
 from .csv_import import CsvFormatError, CsvImportService, ImportPlan, ImportResult
 from .es import EsService, LengthCheck, StaleAnswerError
-from .review import ReviewService
+from .review import NO_INDUSTRY, ReviewService
 from .selection import UNSET, DashboardSummary, SelectionService, StepChange
 
 __all__ = [
@@ -13,6 +13,7 @@ __all__ = [
     "ImportPlan",
     "ImportResult",
     "LengthCheck",
+    "NO_INDUSTRY",
     "ReviewService",
     "SelectionService",
     "StaleAnswerError",
