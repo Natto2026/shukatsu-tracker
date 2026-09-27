@@ -24,7 +24,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.10"]
-# 通信する評価先を使う場合だけ必要。既定の書き出しのみなら不要。
+# 通信する実行先（Claude API）を使う場合だけ必要。既定の書き出しのみなら不要。
 llm = ["anthropic>=1.0"]
 # サーバー型の DB を使う場合だけ必要。既定の SQLite なら不要。
 postgres = ["psycopg[binary]>=3.2"]
