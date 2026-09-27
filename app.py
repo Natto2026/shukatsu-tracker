@@ -773,13 +773,23 @@ elif page == "分析":
     ).set_index("選考ステップ")
     # st.bar_chart は軸を辞書順に並べてしまうため、Altair で選考順に固定する
     melted = frame.reset_index().melt("選考ステップ", var_name="結果", value_name="件数")
+    # 目盛りは整数だけを明示する。tickMinStep だけだと件数が少ないときに 0.5 刻みの
+    # 目盛りが format="d" で丸められ、「0, 1, 1」のように同じ数字が並ぶ
+    longest = int(frame.sum(axis=1).max()) if len(frame) else 0
+    tick_step = max(1, -(-longest // 10))  # 目盛りが 10 本程度に収まる刻み
+    ticks = list(range(0, longest + tick_step, tick_step))
     chart = (
         alt.Chart(melted)
         .mark_bar()
         .encode(
             # labelLimit=0 で上限を外す。既定の幅では長いステップ名が「…」で切れる
             y=alt.Y("選考ステップ", sort=list(frame.index), title=None, axis=alt.Axis(labelLimit=0)),
-            x=alt.X("件数", title="件数", axis=alt.Axis(tickMinStep=1, format="d")),
+            x=alt.X(
+                "件数",
+                title="件数",
+                scale=alt.Scale(domain=[0, ticks[-1]], nice=False),
+                axis=alt.Axis(values=ticks, format="d"),
+            ),
             color=alt.Color(
                 "結果",
                 scale=alt.Scale(

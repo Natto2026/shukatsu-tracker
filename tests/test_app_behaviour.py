@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -867,6 +868,18 @@ class TestLabels:
         funnel = at.dataframe[-1].value
         assert funnel.index.name == "選考ステップ"
         assert "step" not in [funnel.index.name, *funnel.columns]
+
+    def test_funnel_axis_has_only_whole_number_ticks(self, app_db):
+        """件数が少なくても、目盛りが 0.5 刻みで「0, 1, 1」と重ならないこと。"""
+        _, step_id = seed_company(app_db)
+        database = open_db(app_db)
+        try:
+            SelectionService(database).update_step(step_id, result="通過")
+        finally:
+            database.close()
+        at = open_page(app_db, "分析")
+        spec = json.loads(at.get("vega_lite_chart")[0].proto.spec)
+        assert spec["encoding"]["x"]["axis"]["values"] == [0, 1]
 
     def test_pass_rate_is_a_number_so_it_sorts_by_value(self, app_db):
         """通過率の列は数値で渡す。文字列だと並べ替えが "100%" < "33%" < "7%" の辞書順になる。"""
