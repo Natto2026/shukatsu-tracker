@@ -67,15 +67,15 @@ class EsService:
         """本文を書き換える。`expected` を渡すと、いまの本文がそれと一致するときだけ書く。
 
         表示してから保存するまでの間に別のタブや端末が更新していた場合に、古い表示
-        からの入力で新しい本文を潰さないため。判定は書き込みと同じ境界の中で行う
-        （SQLite は開始時に書き込みロックを取るので、判定と書き込みの間に割り込まれない）。
+        からの入力で新しい本文を潰さないため。判定は書き込みと同じ境界の中で、行を
+        ロックしてから行う（SQLite は開始時の書き込みロック、PostgreSQL は FOR UPDATE）。
         """
         with transaction(self._db):
             if expected is not None:
-                current = self._answers.get(answer_id)
+                current = self._answers.lock_text(answer_id)
                 if current is None:
                     raise ValueError("回答が見つかりません。別の場所で削除された可能性があります")
-                if current.answer != expected:
+                if current != expected:
                     raise StaleAnswerError(
                         "表示後に他の場所で更新されたため、この入力は反映していません。最新の本文を表示しています"
                     )

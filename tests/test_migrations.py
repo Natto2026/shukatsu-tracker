@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import threading
-import uuid
 
 import pytest
-from conftest import POSTGRES_DSN, table_names
+from conftest import POSTGRES_DSN, shared_target, table_names
 
 from shukatsu_tracker import db
 from shukatsu_tracker.db import ForeignKeyError, MigrationError, migrations, transaction
@@ -97,14 +96,7 @@ def test_two_sessions_starting_together_apply_a_version_once(tmp_path):
     PostgreSQL の BEGIN はロックを取らず、相手の未確定の記録も見えないため、
     両方が未適用と判断して ALTER TABLE を流し、後の方が列の重複で失敗していた。
     """
-    import psycopg
-
-    schema = f"t{uuid.uuid4().hex[:12]}"
-    with psycopg.connect(POSTGRES_DSN, autocommit=True) as admin:
-        admin.execute(f'CREATE SCHEMA "{schema}"')
-    separator = "&" if "?" in str(POSTGRES_DSN) else "?"
-    dsn = f"{POSTGRES_DSN}{separator}options=-csearch_path%3D{schema}"
-    try:
+    with shared_target(tmp_path) as dsn:
         (tmp_path / "900_base.sql").write_text("CREATE TABLE race (id INTEGER);", encoding="utf-8")
         setup = db.connect(dsn)
         migrations.apply_pending(setup, tmp_path)
@@ -136,9 +128,6 @@ def test_two_sessions_starting_together_apply_a_version_once(tmp_path):
 
         assert errors == []
         assert sorted(applied) == [[], ["901"]]
-    finally:
-        with psycopg.connect(POSTGRES_DSN, autocommit=True) as admin:
-            admin.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
 
 def test_reviews_have_usage_columns(conn):
