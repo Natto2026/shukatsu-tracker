@@ -330,6 +330,36 @@ class TestUserTextIsNotMarkdown:
         assert self.HOSTILE not in labels[0]
         assert labels[0].count(r"\*\*太字\*\*") == 2
 
+    def test_step_name_in_the_status_heading_is_escaped(self, app_db):
+        """企業の見出しの状況（「〇〇待ち」）にもステップ名が入るので、同じく解釈させない。"""
+        database = open_db(app_db)
+        try:
+            selection = SelectionService(database)
+            company_id = selection.add_company(Company(name="テスト株式会社"), with_default_steps=False)
+            selection.add_step(company_id, "![画像](https://example.com/t.png)")
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+        heading = [m.value for m in at.markdown if m.value.startswith("### ")][0]
+        assert "![画像](" not in heading
+        assert r"\!\[画像\]" in heading
+
+    def test_streamlit_specific_syntax_is_not_interpreted(self, app_db):
+        """数式（$）・絵文字や色やアイコン（:…:）も、書いたとおりに出す。"""
+        database = open_db(app_db)
+        try:
+            SelectionService(database).add_company(
+                Company(name="テスト株式会社", memo="年収$500万〜$800万 :material/home: 10:00"),
+                with_default_steps=False,
+            )
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+        memo = [c.value for c in at.caption if "年収" in c.value][0]
+        assert r"\$500" in memo
+        assert ":material/home:" not in memo
+        assert "&#58;material/home&#58;" in memo
+
 
 class TestDestructiveActionsNeedConfirmation:
     def test_delete_is_disabled_until_confirmed(self, app_db):

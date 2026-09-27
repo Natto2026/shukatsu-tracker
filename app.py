@@ -46,12 +46,22 @@ DB_TARGET = os.environ.get("SHUKATSU_DB", str(DEFAULT_DB))
 
 st.set_page_config(page_title="shukatsu-tracker", layout="wide")
 
-_MARKDOWN_SPECIALS = re.compile(r"([\\`*_{}\[\]()#+\-.!|>~])")
+# Markdown の記号に加え、Streamlit が独自に解釈する記号も対象にする。
+# $ は数式、< は自動リンク、& は文字参照。: は絵文字（:smile:）・色（:red[…]）・
+# アイコン（:material/…:）の記法で、アイコンはバックスラッシュでは止まらないため
+# 文字参照 &#58; に置き換える（表示は : のまま）
+_MARKDOWN_SPECIALS = re.compile(r"([\\`*_{}\[\]()#+\-.!|>~$<&])")
 
 
-def as_text(value: str | None) -> str:
-    """利用者が入れた文字列を、Markdown として解釈されない形にする。"""
-    return "" if not value else _MARKDOWN_SPECIALS.sub(r"\\\1", value)
+def as_text(value: str | None, *, keep_lines: bool = False) -> str:
+    """利用者が入れた文字列を、Markdown として解釈されない形にする。
+
+    keep_lines を指定すると、改行を Markdown の改行として残す（メモなど複数行の欄）。
+    """
+    if not value:
+        return ""
+    text = _MARKDOWN_SPECIALS.sub(r"\\\1", value).replace(":", "&#58;")
+    return text.replace("\n", "  \n") if keep_lines else text
 
 
 def with_saved(options: list[str], value: str) -> tuple[list[str], int]:
@@ -252,7 +262,8 @@ elif page == "企業管理":
     # 一覧と状況の両方をこの1回の問い合わせで賄う
     steps = selection.steps_by_company().get(company_id, [])
     status = analytics.company_status(steps)
-    st.markdown(f"### {as_text(selected.name)} — {status}")
+    # 状況の文言にはステップ名が入る（「1次面接待ち」など）ので、これもエスケープする
+    st.markdown(f"### {as_text(selected.name)} — {as_text(status)}")
 
     if selected.mypage_url:
         if selected.mypage_url.startswith(("http://", "https://")):
@@ -261,7 +272,7 @@ elif page == "企業管理":
             st.caption(f"マイページURL: {as_text(selected.mypage_url)}")
         st.caption(f"登録メール: {as_text(selected.login_email) or '未設定'}")
     if selected.memo:
-        st.caption(as_text(selected.memo))
+        st.caption(as_text(selected.memo, keep_lines=True))
 
     with st.expander("企業研究リンク（公式・新卒採用・事業内容・IR・クチコミ・選考体験記・ニュース）"):
         links = research.research_links(selected.name)
