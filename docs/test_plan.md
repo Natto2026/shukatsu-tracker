@@ -59,6 +59,7 @@
 | 途中のステップを消したあとの追加が既存の並び順と衝突しない。消えた企業への追加は文面で伝える | `test_a_step_added_after_a_deletion_does_not_collide`、`test_adding_a_step_to_a_missing_company_is_reported` |
 | 空のステップ名・未定義の結果は拒否 | `test_blank_step_name_is_rejected`、`test_undefined_result_is_rejected` |
 | 回答の本文は、表示していた本文と一致するときだけ書き換える。消えた回答は文面で伝える | `test_update_refuses_to_overwrite_a_text_that_changed_since_it_was_shown`、`test_update_writes_when_the_shown_text_is_still_current`、`test_update_of_a_deleted_answer_is_reported` |
+| 同じ本文を表示していた2つのセッションが同時に保存しても、通るのは片方だけ（PostgreSQL では行をロックして突き合わせる） | `test_two_sessions_saving_from_the_same_text_do_not_both_win` |
 | 複数ステップの更新は全行を検証してから1つの境界で書く。途中で失敗したら何も残らない。書いた行数を返す | `test_updating_many_steps_validates_every_row_before_writing`、`test_a_failure_midway_leaves_no_step_updated`、`test_updating_many_steps_counts_only_rows_with_a_change` |
 | 締切を消しても結果には触れない | `test_deadline_can_be_cleared_without_touching_the_result` |
 | 変更なしの更新は何もしない | `test_updating_nothing_is_a_no_op` |
@@ -99,6 +100,8 @@
 | 途中で失敗した適用は巻き戻る | `test_a_failing_migration_is_rolled_back` |
 | 外部キー制約が効いている | `test_foreign_keys_are_enforced` |
 | 一覧を読んだあとに別のプロセスが流した版は、境界の中で見直して二度流さない | `test_a_version_applied_meanwhile_is_skipped_inside_the_boundary` |
+| 版の中の文が一意制約に反したら、記録の重複と取り違えずに失敗として止め、次の版も流さない | `test_a_version_that_breaks_a_unique_constraint_is_not_skipped` |
+| 2つのセッションが同時に初回接続しても、二度流せない版を1回だけ流す（PostgreSQL のみ） | `test_two_sessions_starting_together_apply_a_version_once` |
 
 ### 接続（`tests/test_connection.py`）
 
@@ -138,6 +141,8 @@
 | 選考ステップの保存が途中で失敗しても、文面で伝え、どの行も書かれない | `test_a_failed_step_save_shows_a_message_and_writes_nothing` |
 | ES管理の絞り込みが効く（判定はサービス層の検索） | `test_keyword_narrows_the_list` |
 | ES 本文でも古いタブが新しい変更を潰さず、そのことを知らせる。最新の表示からの保存は通る | `test_a_stale_tab_cannot_overwrite_a_newer_answer`、`test_saving_from_a_fresh_tab_still_works` |
+| 追加フォームは弾かれたときに入力を消さず、保存できたときだけ空に戻す | `TestFormsKeepInputOnError` |
+| 添削で業界を「指定なし」にしたら、提出先の業界の観点を足さずに送り、そのとおり残す | `test_choosing_no_industry_is_what_gets_sent_and_saved` |
 | 利用者が入れた文字列を、ラベルや通知で Markdown として解釈させない | `TestUserTextIsNotMarkdown` |
 | 添削のページの題がメニューの項目名と揃い、表の見出しに内部の列名が出ない | `test_review_page_title_matches_the_menu`、`test_funnel_table_has_no_english_heading` |
 | 削除は確認しないと押せない。確認すれば消える | `test_delete_is_disabled_until_confirmed`、`test_delete_works_once_confirmed` |
@@ -171,6 +176,7 @@
 | 既定の実行先は依頼文をそのまま返し、通信しないと宣言する | `test_returns_the_prompt_unchanged`、`test_declares_that_it_does_not_send_data` |
 | API の実行先は送信内容・拒否・空応答・依存やキーの欠如を扱える。途中で切れた所見は保存しない。使用量を結果に載せる | `TestAnthropicProvider`、`TestExtractText`、`TestExtractUsage` |
 | SDK の例外は状態コードと理由を添えた文面になる。SDK の内部の不具合を「SDK が古い」と誤案内しない | `TestErrorTranslation` |
+| 本物の SDK を通信だけ差し替えて通し、引数名（`betas`・`fallbacks`）と例外の型が実際の SDK と合っている（SDK が入っている環境のみ） | `TestWithTheRealSdk` |
 | モデルは環境変数で差し替えられ、未設定・空白なら既定に戻る。明示指定が環境変数より優先される | `test_model_defaults_when_the_environment_is_unset`、`test_model_can_be_overridden_by_the_environment`、`test_a_blank_environment_value_falls_back_to_the_default`、`test_an_explicit_model_wins_over_the_environment`、`test_the_environment_is_read_at_call_time_not_at_import` |
 | 実行先の一覧は通信しないものが先頭、API はキーがあるときだけ | `test_offline_provider_is_always_first`、`test_api_provider_appears_when_the_key_is_set` |
 | 所見は依頼文と本文の写しごと保存され、後の書き換えを検出する | `test_run_saves_the_review`、`test_prompt_is_stored_with_the_result`、`test_snapshot_detects_a_later_edit` |
