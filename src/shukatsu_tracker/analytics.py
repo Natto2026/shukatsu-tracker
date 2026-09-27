@@ -19,6 +19,9 @@ DECLINED = "辞退"
 
 _JUDGED = (PASSED, FAILED)
 
+# 通過率の数え方。画面と書き出しで同じ説明を出す
+PASS_RATE_UNIT = "ステップ単位の集計。1社で ES 通過・1次面接落選なら、通過1・落選1と数える"
+
 
 def parse_date(value: str | None) -> date | None:
     """ISO 形式の日付文字列を date にする。読めなければ None。"""
@@ -66,6 +69,8 @@ def pass_rate_by(steps: Iterable[StepView], attribute: str, step_name: str | Non
 
     step_name を指定するとそのステップだけを対象にする（例: "ES"）。
     分母は結果が確定したものだけで、選考中・辞退は数えない。
+    数えるのはステップ単位で、企業単位ではない。1社で ES 通過・1次面接落選なら、
+    通過1・落選1になる（企業ごとの最終到達を見るのはファネルの役割）。
     """
     if attribute not in {"route", "test_type", "industry"}:
         raise ValueError(f"集計できない属性です: {attribute}")

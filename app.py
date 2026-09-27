@@ -687,16 +687,24 @@ elif page == "分析":
     def rate_frame(attribute: str, label: str) -> pd.DataFrame:
         rates = analytics.pass_rate_by(all_steps, attribute, step_name=target_step)
         return pd.DataFrame(
-            [{label: r.group, "通過": r.passed, "落選": r.failed, "通過率": f"{r.rate:.0%}"} for r in rates]
+            [{label: r.group, "通過": r.passed, "落選": r.failed, "通過率": r.rate} for r in rates]
         )
 
+    # 通過率は数値のまま渡し、表示だけを百分率にする。文字列にすると、見出しで
+    # 並べ替えたときに "100%" < "33%" < "7%" の辞書順になる
+    rate_columns = {"通過率": st.column_config.NumberColumn("通過率", format="percent")}
+    st.caption(f"{analytics.PASS_RATE_UNIT}。対象ステップを選ぶと、そのステップだけの通過率になる。")
     c1, c2 = st.columns(2)
     with c1:
-        st.subheader("応募経路別の通過率")
-        st.dataframe(rate_frame("route", "応募経路"), width="stretch", hide_index=True)
+        st.subheader("応募経路別のステップ通過率")
+        st.dataframe(
+            rate_frame("route", "応募経路"), width="stretch", hide_index=True, column_config=rate_columns
+        )
     with c2:
-        st.subheader("適性検査タイプ別の通過率")
-        st.dataframe(rate_frame("test_type", "適性検査"), width="stretch", hide_index=True)
+        st.subheader("適性検査タイプ別のステップ通過率")
+        st.dataframe(
+            rate_frame("test_type", "適性検査"), width="stretch", hide_index=True, column_config=rate_columns
+        )
 
     st.subheader("選考ファネル")
     funnel_rows = analytics.funnel(all_steps, constants.DEFAULT_STEPS)

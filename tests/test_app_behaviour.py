@@ -750,6 +750,18 @@ class TestLabels:
         assert funnel.index.name == "選考ステップ"
         assert "step" not in [funnel.index.name, *funnel.columns]
 
+    def test_pass_rate_is_a_number_so_it_sorts_by_value(self, app_db):
+        """通過率の列は数値で渡す。文字列だと並べ替えが "100%" < "33%" < "7%" の辞書順になる。"""
+        _, step_id = seed_company(app_db)
+        database = open_db(app_db)
+        try:
+            SelectionService(database).update_step(step_id, result="通過")
+        finally:
+            database.close()
+        at = open_page(app_db, "分析")
+        rates = at.dataframe[0].value
+        assert rates["通過率"].tolist() == [1.0]
+
 
 class TestConnectionScope:
     def test_each_session_opens_its_own_connection(self, app_db):

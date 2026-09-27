@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from factories import make_step
 
-from shukatsu_tracker import ai_export, research
+from shukatsu_tracker import ai_export, analytics, research
 from shukatsu_tracker.models import Company, EsAnswer
 
 
@@ -45,8 +45,12 @@ class TestBuildAnalysisMarkdown:
 
     def test_contains_aggregates(self):
         markdown = self.build()
-        assert "応募経路別の通過率" in markdown
+        assert "応募経路別のステップ通過率" in markdown
         assert "| 一般公募 | 0 | 1 | 0% |" in markdown
+
+    def test_pass_rate_says_how_it_is_counted(self):
+        """書き出しを読む側が企業単位の通過率と取り違えないよう、数え方を添える。"""
+        assert analytics.PASS_RATE_UNIT in self.build()
 
     def test_export_never_contains_credentials(self):
         """マイページURL・ログイン用メールは書き出しに絶対に含めない。"""

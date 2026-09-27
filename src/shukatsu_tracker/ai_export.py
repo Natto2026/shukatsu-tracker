@@ -45,13 +45,18 @@ def build_analysis_markdown(
 
     route_rates = analytics.pass_rate_by(all_steps, "route")
     if route_rates:
-        lines += ["### 応募経路別の通過率", ""]
+        lines += [
+            "### 応募経路別のステップ通過率",
+            "",
+            f"（{analytics.PASS_RATE_UNIT}）",
+            "",
+        ]
         lines += _rate_table(route_rates, "応募経路")
         lines.append("")
 
     test_rates = analytics.pass_rate_by(all_steps, "test_type")
     if test_rates:
-        lines += ["### 適性検査タイプ別の通過率", ""]
+        lines += ["### 適性検査タイプ別のステップ通過率", ""]
         lines += _rate_table(test_rates, "適性検査")
         lines.append("")
 
