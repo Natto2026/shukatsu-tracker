@@ -20,11 +20,13 @@
 | 指定日数以内の締切だけを抽出する | `test_within_days` |
 | 期限超過を含め、先頭に並べる | `test_overdue_is_included_and_sorted_first` |
 | 結果の出たステップと日付のないステップは対象外 | `test_finished_and_undated_steps_are_ignored` |
+| 落選・辞退した企業の残りのステップは、締切に出さない | `test_remaining_steps_of_an_ended_company_are_ignored`、`test_a_declined_company_is_also_ended` |
 | 経路別の通過率を出す | `test_rate_by_route` |
 | 通過率の高い順に並ぶ | `test_sorted_by_rate_descending` |
 | ステップ名で絞り込める | `test_filter_by_step_name` |
 | 想定外の属性名は受け付けない | `test_unknown_attribute_is_rejected` |
 | ファネルは既定の選考順で数える | `test_counts_in_standard_order` |
+| 落選・辞退した企業の残りのステップは、ファネルの「選考中」に数えない | `test_remaining_steps_of_an_ended_company_are_not_in_progress` |
 | 企業の状況判定（ステップなし・落選優先・最初の選考中・全通過） | `TestCompanyStatus` |
 
 ### リポジトリ（`tests/test_repositories.py`）
@@ -52,6 +54,7 @@
 | 企業を追加すると既定の選考ステップも入る。省略もできる | `test_default_steps_are_created`、`test_default_steps_can_be_skipped` |
 | 企業名は前後の空白を除き、空なら拒否 | `test_name_is_trimmed_and_required` |
 | 業界・志望度・応募経路・適性検査は選択肢にある値だけを受け付ける（追加も更新も）。更新でも企業名は必須で、URL とメールは空白を除く | `TestCompanyValidation` |
+| 企業名・ステップ名に改行やタブなどの制御文字を入れさせない（追加も更新も） | `test_a_company_name_with_control_characters_is_rejected`、`test_renaming_to_a_multi_line_name_is_rejected`、`test_a_step_name_with_a_line_break_is_rejected` |
 | 読めない書式の締切は空にせず拒否する。読める締切は ISO 形式で保存する | `test_an_unreadable_deadline_is_rejected_not_nulled`、`test_a_readable_deadline_is_stored_in_iso_form` |
 | 重複で失敗したとき、ステップだけが残らない | `test_duplicate_name_leaves_no_orphan_steps` |
 | 追加したステップは末尾に付く | `test_added_step_goes_to_the_end` |
@@ -80,6 +83,7 @@
 | 同じ企業名の行は1社にまとまる。空欄は追加フォームと同じ既定値。空行は数えて読み飛ばす | `test_rows_with_the_same_name_become_one_company`、`test_blank_cells_take_the_same_defaults_as_the_form`、`test_blank_rows_are_counted_and_skipped` |
 | 行番号は表計算ソフト上の行と一致する（セル内改行があってもずれない）。企業名が空の行は行番号つきで伝える | `test_line_numbers_match_the_spreadsheet_rows`、`test_blank_company_name_is_reported_with_its_line` |
 | 読めない締切を空にしない。選択肢にない値を既定値に丸めない。締切は ISO 形式に揃える | `test_unreadable_deadline_is_reported_not_nulled`、`test_value_outside_the_choices_is_reported_not_defaulted`、`test_deadline_is_normalised_to_iso` |
+| CSV の引用符の中の改行を、企業名・ステップ名に入れない | `test_a_line_break_in_a_name_is_reported` |
 | ステップ名のない締切・結果、見出しより右の値は取り込まずに伝える | `test_step_details_without_a_step_name_are_reported`、`test_cells_beyond_the_header_are_reported` |
 | 1行でも問題があれば、その企業は丸ごと取り込まない | `test_one_bad_row_holds_back_the_whole_company` |
 | 登録済みの企業は上書きせず伝える。企業内のステップの重複と、行どうしの属性の食い違いも伝える | `test_existing_company_is_reported_not_overwritten`、`test_repeated_step_within_a_company_is_reported`、`test_conflicting_company_attributes_are_reported`、`test_repeating_the_same_attribute_is_not_a_conflict` |
@@ -102,6 +106,8 @@
 | 一覧を読んだあとに別のプロセスが流した版は、境界の中で見直して二度流さない | `test_a_version_applied_meanwhile_is_skipped_inside_the_boundary` |
 | 版の中の文が一意制約に反したら、記録の重複と取り違えずに失敗として止め、次の版も流さない | `test_a_version_that_breaks_a_unique_constraint_is_not_skipped` |
 | 2つのセッションが同時に初回接続しても、二度流せない版を1回だけ流す（PostgreSQL のみ） | `test_two_sessions_starting_together_apply_a_version_once` |
+| 空の DB に2つのセッションが同時に初めて接続しても、どちらも失敗しない（PostgreSQL のみ） | `test_first_connections_arriving_together_both_succeed` |
+| PostgreSQL の実行時間の打ち切りや容量不足は「接続が切れた」にせず、切断だけをそう分類する | `TestPostgresErrorClassification` |
 
 ### 接続（`tests/test_connection.py`）
 
@@ -135,6 +141,7 @@
 | 登録した企業がダッシュボードに出る | `test_dashboard_shows_registered_company` |
 | 描画しただけでは書き換えない（読めない締切を壊さない） | `test_rendering_does_not_destroy_an_unreadable_deadline`、`test_saving_without_edits_keeps_an_unreadable_deadline` |
 | 別の場所の更新を古い表示で戻さない | `test_rendering_does_not_revert_an_out_of_band_update`、`test_a_stale_tab_cannot_overwrite_a_newer_change` |
+| 保存済みの締切を画面から空に戻せる。締切のない行には消すチェックを出さない | `test_a_saved_deadline_can_be_cleared`、`test_a_step_without_a_deadline_has_nothing_to_clear` |
 | 古い表示への入力は反映せず、そのことを知らせる。更新されていない行の編集は通す。最新の表示からの保存では警告しない | `test_a_stale_tab_is_told_that_its_edit_was_not_saved`、`test_an_edit_on_an_untouched_row_is_still_saved_from_a_stale_tab`、`test_saving_a_fresh_tab_does_not_warn` |
 | 入力エラーは例外ではなく文面で出る | `test_duplicate_company_name_shows_a_message_not_a_traceback`、`test_blank_company_name_is_reported` |
 | 選択肢にない古い値があっても画面は落ちず、黙って書き換えず、更新時に選び直すよう伝える | `TestValuesOutsideTheChoices` |
@@ -144,6 +151,10 @@
 | 追加フォームは弾かれたときに入力を消さず、保存できたときだけ空に戻す | `TestFormsKeepInputOnError` |
 | 添削で業界を「指定なし」にしたら、提出先の業界の観点を足さずに送り、そのとおり残す | `test_choosing_no_industry_is_what_gets_sent_and_saved` |
 | 利用者が入れた文字列を、ラベルや通知で Markdown として解釈させない | `TestUserTextIsNotMarkdown` |
+| 状況の見出しに入るステップ名も解釈させない。数式・絵文字・色・アイコンの記法も書いたとおりに出す | `test_step_name_in_the_status_heading_is_escaped`、`test_streamlit_specific_syntax_is_not_interpreted` |
+| 企業情報を更新しても選択が別の企業に移らない。「（汎用）」という名前の企業があっても汎用の回答を登録できる | `TestCompanySelection` |
+| 所見の履歴を開いただけで外部の画像を読みに行かない | `TestReviewHistoryRendering` |
+| 通過率の列は数値で、値の順に並べ替わる | `test_pass_rate_is_a_number_so_it_sorts_by_value` |
 | 添削のページの題がメニューの項目名と揃い、表の見出しに内部の列名が出ない | `test_review_page_title_matches_the_menu`、`test_funnel_table_has_no_english_heading` |
 | 削除は確認しないと押せない。確認すれば消える | `test_delete_is_disabled_until_confirmed`、`test_delete_works_once_confirmed` |
 | 選考ステップと所見の削除も、何が失われるかを見せた上の「削除する」だけで行える | `test_step_delete_is_behind_a_confirmation`、`test_review_delete_is_behind_a_confirmation` |
@@ -158,6 +169,7 @@
 |---|---|
 | リンクは https でエンコード済み、主要な調査ページを網羅 | `test_links_are_https_and_encoded`、`test_covers_key_research_pages` |
 | 書き出しに依頼文・記録・集計が含まれる | `test_contains_request_and_records`、`test_contains_aggregates` |
+| 書き出しの通過率に、ステップ単位で数えていることを添える | `test_pass_rate_says_how_it_is_counted` |
 | 書き出しにマイページ URL とログイン用メールを含めない | `test_export_never_contains_credentials` |
 | 回答本文は求めたときだけ含め、空の回答は飛ばす | `test_answers_only_when_requested`、`test_empty_answers_are_skipped` |
 
