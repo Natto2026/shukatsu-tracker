@@ -49,8 +49,10 @@ st.set_page_config(page_title="shukatsu-tracker", layout="wide")
 # Markdown の記号に加え、Streamlit が独自に解釈する記号も対象にする。
 # $ は数式、< は自動リンク、& は文字参照。: は絵文字（:smile:）・色（:red[…]）・
 # アイコン（:material/…:）の記法で、アイコンはバックスラッシュでは止まらないため
-# 文字参照 &#58; に置き換える（表示は : のまま）
-_MARKDOWN_SPECIALS = re.compile(r"([\\`*_{}\[\]()#+\-.!|>~$<&])")
+# 文字参照 &#58; に置き換える（表示は : のまま）。= は次の行に置くと前の行を見出しにする
+_MARKDOWN_SPECIALS = re.compile(r"([\\`*_{}\[\]()#+\-.!|>~$<&=])")
+# 行頭の空白。4つ以上並ぶとコードブロックになるため、文字参照にして字下げとして扱わせない
+_LEADING_SPACE = re.compile(r"^[ \t]+", re.MULTILINE)
 
 
 def as_text(value: str | None, *, keep_lines: bool = False) -> str:
@@ -61,6 +63,7 @@ def as_text(value: str | None, *, keep_lines: bool = False) -> str:
     if not value:
         return ""
     text = _MARKDOWN_SPECIALS.sub(r"\\\1", value).replace(":", "&#58;")
+    text = _LEADING_SPACE.sub(lambda m: "&#32;" * len(m.group(0)), text)
     return text.replace("\n", "  \n") if keep_lines else text
 
 

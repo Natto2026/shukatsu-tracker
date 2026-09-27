@@ -379,6 +379,22 @@ class TestUserTextIsNotMarkdown:
         assert ":material/home:" not in memo
         assert "&#58;material/home&#58;" in memo
 
+    def test_memo_lines_cannot_become_a_heading_or_a_code_block(self, app_db):
+        """メモの改行は残すが、次の行の === で見出しに、4字下げでコードブロックにならないこと。"""
+        database = open_db(app_db)
+        try:
+            SelectionService(database).add_company(
+                Company(name="テスト株式会社", memo="1行目のメモ\n===\n\n    4字下げの行"),
+                with_default_steps=False,
+            )
+        finally:
+            database.close()
+        at = open_page(app_db, "企業管理")
+        memo = [c.value for c in at.caption if "1行目のメモ" in c.value][0]
+        assert r"\=\=\=" in memo
+        assert "\n    4字下げ" not in memo
+        assert "&#32;&#32;&#32;&#32;4字下げ" in memo
+
 
 class TestDestructiveActionsNeedConfirmation:
     def test_delete_is_disabled_until_confirmed(self, app_db):
