@@ -13,6 +13,7 @@ from collections.abc import Mapping, Sequence
 
 from . import analytics, constants
 from .models import Company, EsAnswer, PassRate, StepView
+from .plain_text import fence_for, one_line, table_cell
 
 PROMPT_HEADER = """\
 # 依頼: 選考データの分析
@@ -30,7 +31,7 @@ PROMPT_HEADER = """\
 
 def _rate_table(rates: Sequence[PassRate], label: str) -> list[str]:
     lines = [f"| {label} | 通過 | 落選 | 通過率 |", "|---|---|---|---|"]
-    lines += [f"| {r.group} | {r.passed} | {r.failed} | {r.rate:.0%} |" for r in rates]
+    lines += [f"| {table_cell(r.group)} | {r.passed} | {r.failed} | {r.rate:.0%} |" for r in rates]
     return lines
 
 
@@ -64,23 +65,28 @@ def build_analysis_markdown(
     if rows:
         lines += ["### 選考ファネル", ""]
         lines += ["| ステップ | 通過 | 落選 | 選考中 | 辞退 |", "|---|---|---|---|---|"]
-        lines += [f"| {r.step} | {r.passed} | {r.failed} | {r.in_progress} | {r.declined} |" for r in rows]
+        lines += [
+            f"| {table_cell(r.step)} | {r.passed} | {r.failed} | {r.in_progress} | {r.declined} |"
+            for r in rows
+        ]
         lines.append("")
 
+    # 利用者の文字列は、1行に収めるか囲みに入れる。メモや設問の改行の続きが、
+    # この文書の見出しや依頼として読まれないようにするため
     lines += ["## 企業別の選考記録", ""]
     for company in companies:
         steps = list(steps_by_company.get(company.id or -1, []))
         status = analytics.company_status(steps)
         lines.append(
-            f"### {company.name}（業界: {company.industry} / 志望度: {company.priority} / "
+            f"### {one_line(company.name)}（業界: {company.industry} / 志望度: {company.priority} / "
             f"経路: {company.route} / 適性検査: {company.test_type} / 現況: {status}）"
         )
         for step in steps:
             deadline = f" 締切{step.deadline}" if step.deadline else ""
-            memo = f" — {step.memo}" if step.memo else ""
-            lines.append(f"- {step.name}:{deadline} 結果: {step.result}{memo}")
+            memo = f" — {one_line(step.memo)}" if step.memo else ""
+            lines.append(f"- {one_line(step.name)}:{deadline} 結果: {step.result}{memo}")
         if company.memo:
-            lines.append(f"- メモ: {company.memo}")
+            lines.append(f"- メモ: {one_line(company.memo)}")
         lines.append("")
 
     if es_answers:
@@ -88,9 +94,10 @@ def build_analysis_markdown(
         for answer in es_answers:
             if not answer.answer:
                 continue
-            company_name = answer.company_name or "汎用"
-            lines.append(f"### [{answer.category}] {answer.question}（{company_name}）")
-            lines.append(answer.answer)
-            lines.append("")
+            company_name = one_line(answer.company_name or "汎用")
+            lines.append(f"### [{answer.category}] {one_line(answer.question)}（{company_name}）")
+            # 本文は段落や改行に意味があるので1行にせず、抜け出せない囲みに入れる
+            fence = fence_for(answer.answer)
+            lines += [fence, answer.answer, fence, ""]
 
     return "\n".join(lines)

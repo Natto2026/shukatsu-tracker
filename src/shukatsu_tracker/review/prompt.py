@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ..plain_text import fence_for, one_line, table_cell
 from . import criteria as criteria_module
 from .criteria import CriteriaSet
 
@@ -55,31 +56,11 @@ class ReviewRequest:
         return len(self.answer)
 
 
-def _inline(text: str) -> str:
-    """1行に収める。改行を含む入力が、続きの行で見出しや指示として読まれないようにする。"""
-    return text.replace("\r", " ").replace("\n", " ").strip()
-
-
-def _cell(text: str) -> str:
-    """表のセルに入れる。改行と縦棒は列の区切りを壊すため置き換える。"""
-    return _inline(text).replace("|", "／")
-
-
-def _fence_for(text: str) -> str:
-    """本文を囲む記号。本文中の連続バッククォートより1つ長くする。"""
-    longest = 0
-    run = 0
-    for char in text:
-        run = run + 1 if char == "`" else 0
-        longest = max(longest, run)
-    return "`" * max(3, longest + 1)
-
-
 def _criteria_table(criteria: CriteriaSet) -> str:
     lines = ["| 観点 | 重み | 見るところ | 弱いときの見え方 |", "|---|---|---|---|"]
     for criterion in criteria:
-        check = _cell(criterion.check)
-        weak = _cell(criterion.weak)
+        check = table_cell(criterion.check)
+        weak = table_cell(criterion.weak)
         lines.append(f"| {criterion.title} | {criterion.emphasis_label} | {check} | {weak} |")
     return "\n".join(lines)
 
@@ -87,18 +68,18 @@ def _criteria_table(criteria: CriteriaSet) -> str:
 def _target_block(request: ReviewRequest) -> str:
     lines = ["## 評価の対象", ""]
     if request.company_name:
-        lines.append(f"- 提出先: {_inline(request.company_name)}")
+        lines.append(f"- 提出先: {one_line(request.company_name)}")
     lines.append(f"- 応募業界: {request.industry or '指定なし'}")
-    lines.append(f"- 設問: {_inline(request.question)}")
+    lines.append(f"- 設問: {one_line(request.question)}")
     if request.char_limit:
         lines.append(f"- 文字数: {request.length} / {request.char_limit}（制限あり）")
     else:
         lines.append(f"- 文字数: {request.length}（制限の指定なし）")
     if request.note:
-        lines.append(f"- 書き手からの補足: {_cell(request.note)}")
+        lines.append(f"- 書き手からの補足: {table_cell(request.note)}")
     # 本文は囲って渡す。見出しや表を含む回答が、下の指示や観点の表を
     # 上書きして読まれないようにするため。
-    fence = _fence_for(request.answer)
+    fence = fence_for(request.answer)
     lines += [
         "",
         "### 回答本文（囲みの内側だけが評価の対象）",
