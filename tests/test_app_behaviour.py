@@ -87,6 +87,23 @@ class TestNoWriteOnRender:
         assert not at.exception, at.exception
         assert read_step(app_db, step_id) == ("2026/10/01", "選考中")
 
+    def test_a_saved_deadline_can_be_cleared(self, app_db):
+        """保存済みの締切を画面から空に戻せること。
+
+        日付の入力欄は初期値が空のときしか空に戻せないため、別のチェックで消す。
+        """
+        _, step_id = seed_company(app_db, deadline="2026-10-01")
+        at = open_page(app_db, "企業管理")
+        [c for c in at.checkbox if c.label == "締切を消す"][0].check()
+        [b for b in at.button if b.label == "選考ステップを保存"][0].click().run()
+        assert not at.exception, at.exception
+        assert read_step(app_db, step_id) == (None, "選考中")
+
+    def test_a_step_without_a_deadline_has_nothing_to_clear(self, app_db):
+        seed_company(app_db)
+        at = open_page(app_db, "企業管理")
+        assert not [c for c in at.checkbox if c.label == "締切を消す"]
+
     def test_rendering_does_not_revert_an_out_of_band_update(self, app_db):
         """別の場所で更新された値を、古い表示のまま書き戻さないこと。"""
         _, step_id = seed_company(app_db, deadline="2026-10-01")

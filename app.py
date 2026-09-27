@@ -305,13 +305,13 @@ elif page == "企業管理":
     st.session_state["steps_shown"] = now_shown
 
     with st.form("edit_steps"):
-        edited: list[tuple[int, date | None, str, str | None, str]] = []
+        edited: list[tuple[int, date | None, bool, str, str | None, str]] = []
         for step in steps:
             rendered_deadline = analytics.parse_date(step.deadline)
             # DB の値をキーに含める。別のタブや端末で更新されたとき、
             # 古い入力欄の値が残って上書きするのを防ぐため。
             token = f"{step.id}:{step.deadline}:{step.result}"
-            c1, c2, c3 = st.columns([3, 2, 2])
+            c1, c2, c3, c4 = st.columns([3, 2, 1, 2])
             c1.write(f"**{as_text(step.name)}**")
             new_deadline = c2.date_input(
                 "締切",
@@ -320,15 +320,20 @@ elif page == "企業管理":
                 format="YYYY-MM-DD",
                 label_visibility="collapsed",
             )
+            # 日付の入力欄は、初期値が空のときしか空に戻せない（Streamlit の仕様）。
+            # 保存済みの締切を消す手段として、締切がある行にだけ別のチェックを置く
+            clear_deadline = bool(step.deadline) and c3.checkbox("締切を消す", key=f"dlclear:{token}")
             result_options, result_index = with_saved(constants.STEP_RESULTS, step.result)
-            new_result = c3.selectbox(
+            new_result = c4.selectbox(
                 "結果",
                 result_options,
                 index=result_index,
                 key=f"rs:{token}",
                 label_visibility="collapsed",
             )
-            edited.append((step.id or -1, new_deadline, new_result, step.deadline, step.result))
+            edited.append(
+                (step.id or -1, new_deadline, clear_deadline, new_result, step.deadline, step.result)
+            )
 
         if st.form_submit_button("選考ステップを保存", type="primary"):
             # 押した時点の表示と、いま読み直した値を突き合わせる。ずれている行は
@@ -338,15 +343,19 @@ elif page == "企業管理":
                 1 for step_id, shown in previously_shown.items() if now_shown.get(step_id) != shown
             )
             changes: list[StepChange] = []
-            for step_id, new_deadline, new_result, old_deadline, old_result in edited:
+            for step_id, new_deadline, clear_deadline, new_result, old_deadline, old_result in edited:
                 rendered = analytics.parse_date(old_deadline)
                 # 表示していた値と違うものだけを書く。読めない締切に
                 # 触っていない場合は、空欄に見えていても書き換えない。
-                deadline_change = (
-                    (new_deadline.isoformat() if new_deadline else None)
-                    if new_deadline != rendered
-                    else UNSET
-                )
+                # 「締切を消す」を付けた行は、日付の入力欄の値にかかわらず空にする
+                if clear_deadline:
+                    deadline_change = None
+                else:
+                    deadline_change = (
+                        (new_deadline.isoformat() if new_deadline else None)
+                        if new_deadline != rendered
+                        else UNSET
+                    )
                 result_change = new_result if new_result != old_result else UNSET
                 if deadline_change is not UNSET or result_change is not UNSET:
                     changes.append(StepChange(step_id, deadline=deadline_change, result=result_change))
