@@ -64,6 +64,18 @@ def as_text(value: str | None, *, keep_lines: bool = False) -> str:
     return text.replace("\n", "  \n") if keep_lines else text
 
 
+_IMAGE_SYNTAX = re.compile(r"!\[")
+
+
+def without_images(text: str) -> str:
+    """AI の出力を描画する前に、画像の記法だけを無効にする。
+
+    見出しや箇条書きは読みやすさのため Markdown のまま描画したい。ただし画像の記法は
+    描画した時点で外部の URL を読みに行くため、`!` をエスケープして文字として出す。
+    """
+    return _IMAGE_SYNTAX.sub(r"\\![", text)
+
+
 def with_saved(options: list[str], value: str) -> tuple[list[str], int]:
     """選択肢と、保存済みの値の位置。
 
@@ -653,7 +665,12 @@ elif page == "添削":
             if not review.applies_to(target.answer):
                 label += "  ※この所見のあとに本文が変わっています"
             with st.expander(label):
-                st.markdown(review.result)
+                if review.model is None:
+                    # 通信しない実行先の結果は依頼文そのもの。提出先・設問・補足が入るので
+                    # Markdown として描画せず、書き出したとおりに見せる
+                    st.code(review.result, language="markdown")
+                else:
+                    st.markdown(without_images(review.result))
                 c1, c2 = st.columns([1, 5])
                 c2.download_button(
                     "この所見を保存",

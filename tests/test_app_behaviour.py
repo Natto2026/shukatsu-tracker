@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ from streamlit.testing.v1 import AppTest
 from shukatsu_tracker import db
 from shukatsu_tracker.db import CompanyRepository, DatabaseError, StepRepository, transaction
 from shukatsu_tracker.models import Company, EsAnswer
+from shukatsu_tracker.review.providers import ReviewResult
 from shukatsu_tracker.services import EsService, ReviewService, SelectionService
 
 APP_PATH = str(Path(__file__).parent.parent / "app.py")
@@ -729,6 +731,46 @@ class TestCompanySelection:
         finally:
             database.close()
         assert answer.company_id is None
+
+
+class TestReviewHistoryRendering:
+    """所見の履歴を開いただけで、外部の画像を読みに行かないこと。"""
+
+    BEACON = "![t](https://example.com/beacon.png)"
+
+    def seed_review(self, app_db, *, provider=None, note: str = "") -> None:
+        answer_id = seed_answer(app_db)
+        database = open_db(app_db)
+        try:
+            stored = EsService(database).answer(answer_id)
+            assert stored is not None
+            ReviewService(database).run(stored, provider=provider, note=note)
+        finally:
+            database.close()
+
+    def test_an_exported_prompt_is_shown_as_is_not_rendered(self, app_db):
+        """通信しない実行先の結果は依頼文そのもの。補足に書いた記法を描画しない。"""
+        self.seed_review(app_db, note=self.BEACON)
+        at = open_page(app_db, "添削")
+        assert any(self.BEACON in c.value for c in at.code)
+        assert not any(self.BEACON in m.value for m in at.markdown)
+
+    def test_images_in_an_ai_answer_are_not_loaded(self, app_db):
+        class ImageAnswer:
+            name = "スタブ"
+            sends_data_externally = False
+
+            def review(self, request, prompt):
+                text = f"## 所見\n{TestReviewHistoryRendering.BEACON}"
+                return ReviewResult(provider=self.name, prompt=prompt, text=text, model="stub-model")
+
+        self.seed_review(app_db, provider=ImageAnswer())
+        at = open_page(app_db, "添削")
+        rendered = [m.value for m in at.markdown if "所見" in m.value and "beacon" in m.value]
+        assert rendered, "所見の本文が見つからない"
+        # 画像の記法がすべて、直前のバックスラッシュで無効になっていること
+        assert re.search(r"(?<!\\)!\[", rendered[0]) is None
+        assert r"\![t]" in rendered[0]
 
 
 class TestLabels:
